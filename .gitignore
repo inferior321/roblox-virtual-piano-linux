@@ -1,0 +1,25 @@
+# The virtualenv install.sh builds. 316MB, and not portable even if it were
+# small: a venv bakes absolute paths into its own scripts, so a copy is useless
+# on another machine. requirements.txt is what actually pins the dependencies.
+venv/
+
+# Compiled bytecode, regenerated on import.
+__pycache__/
+*.py[cod]
+
+# install.sh writes this launcher on the way past.
+run.sh
+
+# Build output. Rebuilt from the tree, so committing it just adds a binary that
+# changes on every build; attach it to a release instead.
+installation files/
+
+# Local tool permissions, specific to this checkout.
+.claude/settings.local.json
+
+# Editor and OS leftovers.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
