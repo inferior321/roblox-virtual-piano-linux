@@ -249,3 +249,7 @@ Python 3.10 or newer is required.
 ```bash
 ./venv/bin/python tests_offline.py
 ```
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
