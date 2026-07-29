@@ -19,4 +19,8 @@
 # 1.3.0 is presentation: the right-hand clock switches between total length and
 # time remaining and remembers which you picked, and the accent throughout is
 # amethyst rather than brass.
-__version__ = "1.3.0"
+#
+# 1.4.0 corrects the 88-key layout's outer octaves against a working MIDI++
+# config. The middle five octaves agreed exactly; all 27 notes outside them
+# did not, so every one of them had been sending the wrong key.
+__version__ = "1.4.0"

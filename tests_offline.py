@@ -120,6 +120,18 @@ check("no two notes share a keystroke (61)",
 check("no two notes share a keystroke (88)",
       len({k.label() for k in b.notes.values()}) == 88)
 
+# The outer octaves were checked note for note against a working MIDI++ config,
+# so they are pinned here: they are not derivable from the 61-key layout, and
+# an earlier attempt to derive them produced 27 wrong keys that looked orderly.
+check("88-key outer octaves walk the row on ctrl, one key per semitone",
+      all(b.notes[n].label() == k for n, k in
+          {21: "ctrl+1", 28: "ctrl+8", 35: "ctrl+t",
+           97: "ctrl+y", 108: "ctrl+j"}.items()),
+      str({n: b.notes[n].label() for n in (21, 28, 35, 97, 108)}))
+check("88-key layout never needs two modifiers at once",
+      not any(len(k.mods) > 1 for k in b.notes.values()),
+      str(sorted({k.label() for k in b.notes.values() if len(k.mods) > 1})))
+
 # ------------------------------------------------------------ basic notes
 
 backend, errors, _ = run(FakeSong([E(0.0, True, 60), E(0.4, False, 60)]),

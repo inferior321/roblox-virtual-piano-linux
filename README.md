@@ -82,9 +82,12 @@ below it. This is verified, nearly every Roblox piano uses it, and it's the
 default.
 
 **Roblox 88-key** is the layout Piano Rooms uses, A0 to C8: the middle five
-octaves are identical to the 61-key layout, and the outer octaves add ctrl —
-ctrl plus the key two octaves inward, which keeps every combination unique.
-This is verified too, and the Range test button checks it in your own game.
+octaves are identical to the 61-key layout, and the 27 notes outside them walk
+the same row again with ctrl held, one key per semitone — A0 is `ctrl+1`, up
+through `ctrl+t` at B1, resuming at `ctrl+y` for C#7 and ending at `ctrl+j` for
+C8. Black keys out there take a key of their own, so ctrl+shift never arises.
+Both layouts were checked note for note against a working MIDI++ config; the
+Range test button plays those 27 notes on their own to confirm it in your game.
 
 **Out of range** decides what happens to notes the layout cannot reach: fold
 them into the nearest octave, or drop them. The line under that box works it

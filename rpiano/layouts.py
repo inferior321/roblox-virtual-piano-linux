@@ -154,18 +154,23 @@ def build_61() -> Layout:
 def build_88() -> Layout:
     """88-key layout: the 61-key range untouched, extended with ctrl.
 
-    Notes below C2 use ctrl plus the key two octaves higher; notes above C7 use
-    ctrl plus the key two octaves lower. That keeps every combination unique and
-    leaves the middle five octaves identical to the 61-key layout.
+    The 27 notes outside C2-C7 walk the same row again with ctrl held, one key
+    per semitone: A0 is ctrl+1, A#0 ctrl+2, on through ctrl+t at B1, then
+    resuming at ctrl+y for C#7 and finishing at ctrl+j for C8. Black keys out
+    there take their own key rather than shift plus a neighbour, so ctrl+shift
+    never arises.
+
+    This is not a scheme derived from first principles - it is the mapping a
+    working MIDI++ config used, checked note for note. An earlier version put
+    the outer octaves on ctrl plus the key two octaves inward, which is tidy
+    reasoning and produced entirely different keys for all 27 notes. The middle
+    five octaves agreed exactly, so the disagreement was confined to precisely
+    the range nobody had ever confirmed against a real piano.
     """
-    base = build_61().notes
-    notes = dict(base)
-    for n in range(21, BASE_LOW):            # A0 up to B1
-        src = base[n + 24]
-        notes[n] = KeyStroke(src.char, ("ctrl",) + src.mods)
-    for n in range(BASE_HIGH + 1, 109):      # C#7 up to C8
-        src = base[n - 24]
-        notes[n] = KeyStroke(src.char, ("ctrl",) + src.mods)
+    notes = dict(build_61().notes)
+    outer = list(range(21, BASE_LOW)) + list(range(BASE_HIGH + 1, 109))
+    for index, note in enumerate(outer):
+        notes[note] = KeyStroke(WHITE_KEY_ROW[index], ("ctrl",))
     return Layout(
         ident="roblox_88",
         name="Roblox 88-key (Piano Rooms and similar)",
