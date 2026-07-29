@@ -26,4 +26,8 @@
 #
 # 1.4.1 reads files with an out-of-range data byte instead of refusing them.
 # One velocity byte over 127 was enough to lose a whole file.
-__version__ = "1.4.1"
+#
+# 1.5.0 adds a search box over the library. QFileSystemModel only knows the
+# folders you have expanded, so it cannot be filtered recursively; the library
+# is scanned once when a folder loads and every keystroke filters that list.
+__version__ = "1.5.0"

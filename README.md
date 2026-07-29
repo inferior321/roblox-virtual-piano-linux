@@ -25,6 +25,22 @@ an already-running session. Then:
 There's also a "Roblox Piano" entry in your applications menu. If `install.sh`
 complains about venv, run `sudo apt install python3-venv` first.
 
+## The library
+
+**Choose folder** points the tree at your MIDI collection; the tree browses it
+as normal. The box above it searches **every folder below the root at once**,
+which the tree cannot do on its own — it only knows the folders you have
+expanded.
+
+Type two letters or more and the tree is replaced by the matches, nested inside
+the folders that lead to them and expanded so nothing is hidden. The line under
+the panel counts what matched. Clear the box to go back to browsing. It searches
+file names only, so bear in mind that most of a piano library has "piano" in
+the name — matching on `an` will find a great deal.
+
+The box is disabled when the folder holds no MIDI files at all, since there
+would be nothing to search.
+
 ## Start here: the two test buttons
 
 Both are in the **Input** tab.

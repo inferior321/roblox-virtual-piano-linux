@@ -34,10 +34,13 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
     QTreeView,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -94,6 +97,10 @@ class MainWindow(QMainWindow):
         self._seeking = False
         self._hotkeys = None
         self._solo = set()
+        # Set properly by _set_folder; defined here so the search cannot be
+        # asked about a library that has not been scanned yet.
+        self._library_root = Path.home()
+        self._library_files = []
 
         settings = PlayerSettings(
             transpose=self.config.transpose,
@@ -196,17 +203,42 @@ class MainWindow(QMainWindow):
             QDir.Filter.AllDirs | QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
         )
 
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Search this folder…")
+        self.search_box.setClearButtonEnabled(True)
+        self.search_box.setToolTip(
+            "Type at least two letters to search every folder below this one.\n"
+            "Clear the box to go back to browsing."
+        )
+        self.search_box.textChanged.connect(self._search_changed)
+        box.addWidget(self.search_box)
+
         self.tree = QTreeView()
         self.tree.setModel(self.fs_model)
         for column in range(1, 4):
             self.tree.hideColumn(column)
         self.tree.setHeaderHidden(True)
         self.tree.doubleClicked.connect(self._tree_activated)
-        box.addWidget(self.tree, 1)
 
-        hint = QLabel("Double-click to load")
-        hint.setObjectName("Subtitle")
-        box.addWidget(hint)
+        self.results = QTreeWidget()
+        self.results.setHeaderHidden(True)
+        self.results.itemDoubleClicked.connect(self._result_activated)
+
+        self.no_results = QLabel("")
+        self.no_results.setObjectName("Subtitle")
+        self.no_results.setWordWrap(True)
+        self.no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Three ways to fill one slot: browse, results, or nothing found.
+        self.library_stack = QStackedWidget()
+        self.library_stack.addWidget(self.tree)
+        self.library_stack.addWidget(self.results)
+        self.library_stack.addWidget(self.no_results)
+        box.addWidget(self.library_stack, 1)
+
+        self.library_hint = QLabel("Double-click to load")
+        self.library_hint.setObjectName("Subtitle")
+        box.addWidget(self.library_hint)
 
         self._set_folder(self.config.midi_folder, save=False)
         return panel
@@ -688,6 +720,27 @@ class MainWindow(QMainWindow):
         if save:
             self.config.midi_folder = str(folder)
 
+        # QFileSystemModel only knows the folders you have expanded, so it
+        # cannot be filtered recursively. One scan up front costs about 40ms on
+        # a few hundred files and makes every later keystroke a list filter.
+        self._library_root = folder
+        try:
+            self._library_files = sorted(
+                p for p in folder.rglob("*")
+                if p.suffix.lower() in (".mid", ".midi") and p.is_file()
+            )
+        except OSError:
+            self._library_files = []
+        self.search_box.blockSignals(True)
+        self.search_box.clear()
+        self.search_box.blockSignals(False)
+        self.search_box.setEnabled(bool(self._library_files))
+        self.search_box.setPlaceholderText(
+            f"Search {len(self._library_files)} songs…" if self._library_files
+            else "No songs in this folder"
+        )
+        self._show_browse()
+
     def _choose_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(
             self, "Choose your MIDI folder", self.config.midi_folder
@@ -702,6 +755,79 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._load_path(Path(path))
+
+    # -- library search ----------------------------------------------------
+
+    MIN_QUERY = 2
+
+    def _show_browse(self) -> None:
+        self.library_stack.setCurrentWidget(self.tree)
+        self.library_hint.setText("Double-click to load")
+
+    def _search_changed(self, text: str) -> None:
+        """Filter on every keystroke, but only once there is enough to filter on.
+
+        A single letter matches most of a library, so below MIN_QUERY it stays
+        on the browse tree rather than showing a wall of results.
+        """
+        query = text.strip().lower()
+        if len(query) < self.MIN_QUERY:
+            self._show_browse()
+            return
+
+        matches = [p for p in self._library_files if query in p.name.lower()]
+        if not matches:
+            self.no_results.setText(
+                f"No songs match “{text.strip()}”.\n\n"
+                "Clear the box to go back to browsing."
+            )
+            self.library_stack.setCurrentWidget(self.no_results)
+            self.library_hint.setText("0 of "
+                                      f"{len(self._library_files)} songs")
+            return
+
+        self._fill_results(matches)
+        self.library_stack.setCurrentWidget(self.results)
+        self.library_hint.setText(
+            f"{len(matches)} of {len(self._library_files)} songs"
+            "   ·   double-click to load"
+        )
+
+    def _fill_results(self, matches) -> None:
+        """Rebuild the results tree, keeping only folders that lead to a match."""
+        self.results.clear()
+        folders = {}
+        for path in matches:
+            relative = path.relative_to(self._library_root)
+            leaf = QTreeWidgetItem([path.name])
+            leaf.setData(0, Qt.ItemDataRole.UserRole, str(path))
+            if relative.parent == Path("."):
+                self.results.addTopLevelItem(leaf)
+            else:
+                self._folder_item(relative.parent, folders).addChild(leaf)
+        self.results.expandAll()
+
+    def _folder_item(self, relative, folders):
+        """The results-tree row for a folder, building its ancestors as needed.
+
+        `folders` is the run's cache, so a folder holding several matches is
+        created once and the chain above it is walked once.
+        """
+        existing = folders.get(relative)
+        if existing is not None:
+            return existing
+        item = QTreeWidgetItem([relative.name])
+        if relative.parent == Path("."):
+            self.results.addTopLevelItem(item)
+        else:
+            self._folder_item(relative.parent, folders).addChild(item)
+        folders[relative] = item
+        return item
+
+    def _result_activated(self, item, _column: int = 0) -> None:
+        stored = item.data(0, Qt.ItemDataRole.UserRole)
+        if stored:                      # folder rows carry nothing
+            self._load_path(Path(stored))
 
     def _tree_activated(self, index) -> None:
         path = Path(self.fs_model.filePath(index))
