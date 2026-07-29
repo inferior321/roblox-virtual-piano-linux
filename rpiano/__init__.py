@@ -15,4 +15,8 @@
 # transpose buttons, a sustain pedal that follows the layout, the transpose
 # refitted when the layout changes, a fold-or-drop recommendation read off the
 # song, and the clock rewinding on stop.
-__version__ = "1.2.0"
+#
+# 1.3.0 is presentation: the right-hand clock switches between total length and
+# time remaining and remembers which you picked, and the accent throughout is
+# amethyst rather than brass.
+__version__ = "1.3.0"

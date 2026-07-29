@@ -41,6 +41,30 @@ WHITE_INDEX = {note: index for index, note in enumerate(WHITE_NOTES)}
 MIDDLE_C_INDEX = WHITE_INDEX.get(60)
 
 
+class ClickableLabel(QLabel):
+    """A label that reports clicks, for a readout that doubles as a switch.
+
+    The pointing cursor is the only thing telling anyone it can be clicked, so
+    it is set here rather than left to the caller to remember.
+    """
+
+    clicked = pyqtSignal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, event) -> None:
+        # On release, and only if the pointer is still over the label, so a
+        # click begun here and dragged away is abandoned the way a button is.
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.rect().contains(event.position().toPoint())
+        ):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class KeyboardStrip(QWidget):
     """A full 88-key keyboard that lights the notes currently sounding.
 
@@ -61,9 +85,9 @@ class KeyboardStrip(QWidget):
         self._ivory_dim = QColor(theme.IVORY).darker(190)
         self._ebony = QColor(theme.EBONY)
         self._ebony_dim = QColor(theme.EBONY).lighter(160)
-        self._brass = QColor(theme.BRASS)
-        self._brass_dark = QColor(theme.BRASS).darker(115)
-        self._brass_dim = QColor(theme.BRASS_DIM)
+        self._accent = QColor(theme.AMETHYST)
+        self._accent_dark = QColor(theme.AMETHYST).darker(115)
+        self._accent_dim = QColor(theme.AMETHYST_DIM)
         self._panel = QColor(theme.PANEL)
         self._line_pen = QPen(QColor(theme.LINE), 1)
         self._label_pen = QPen(QColor(theme.MUTED))
@@ -105,7 +129,7 @@ class KeyboardStrip(QWidget):
         for index, note in enumerate(WHITE_NOTES):
             x = index * white_w
             if note in held:
-                colour = self._brass
+                colour = self._accent
             elif note in in_layout:
                 colour = self._ivory
             else:
@@ -116,19 +140,19 @@ class KeyboardStrip(QWidget):
         for note in BLACK_NOTES:
             x = (WHITE_INDEX[note - 1] + 1) * white_w - black_w / 2
             if note in held:
-                colour = self._brass_dark
+                colour = self._accent_dark
             elif note in in_layout:
                 colour = self._ebony
             else:
                 colour = self._ebony_dim
             painter.fillRect(QRectF(x, 0, black_w, black_h), colour)
 
-        # A single brass tick under middle C, the only orientation mark needed.
+        # A single tick under middle C, the only orientation mark needed.
         if MIDDLE_C_INDEX is not None:
             x = MIDDLE_C_INDEX * white_w
             painter.fillRect(
                 QRectF(x + white_w * 0.25, height - 4, white_w * 0.5, 3),
-                self._brass_dim,
+                self._accent_dim,
             )
             painter.setPen(self._label_pen)
             painter.setFont(self._label_font)

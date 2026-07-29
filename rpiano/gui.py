@@ -65,7 +65,7 @@ from .player import (
     suggest_transpose,
     test_pattern,
 )
-from .widgets import KeyboardStrip, MappingEditor
+from .widgets import ClickableLabel, KeyboardStrip, MappingEditor
 
 SUSTAIN_CHOICES = [("None", ""), ("Space", " ")]
 
@@ -263,8 +263,10 @@ class MainWindow(QMainWindow):
         self.seek.sliderPressed.connect(lambda: setattr(self, "_seeking", True))
         self.seek.sliderReleased.connect(self._seek_released)
         seek_row.addWidget(self.seek, 1)
-        self.total_label = QLabel("0:00")
+        self.total_label = ClickableLabel("0:00")
         self.total_label.setObjectName("Clock")
+        self.total_label.setToolTip("Click to switch between total length and time left.")
+        self.total_label.clicked.connect(self._toggle_time_display)
         seek_row.addWidget(self.total_label)
         box.addLayout(seek_row)
 
@@ -734,7 +736,7 @@ class MainWindow(QMainWindow):
             self.transpose_spin.setValue(shift)
 
         self.title_label.setText(song.title or path.name)
-        self.total_label.setText(format_time(song.duration))
+        self._refresh_total_label()
         self.details_view.setPlainText(song.details)
         self.seek.setValue(0)
         self.elapsed_label.setText("0:00")
@@ -1143,7 +1145,7 @@ class MainWindow(QMainWindow):
         self.title_label.setText(song.title)
         self.subtitle_label.setText(subtitle)
         self.details_view.setPlainText(song.details)
-        self.total_label.setText(format_time(song.duration))
+        self._refresh_total_label()
         for button in (self.play_button, self.stop_button, self.restart_button):
             button.setEnabled(True)
         self.player.play()
@@ -1206,11 +1208,34 @@ class MainWindow(QMainWindow):
     def _reset_transport_display(self) -> None:
         self.seek.setValue(0)
         self.elapsed_label.setText(format_time(0))
+        self._refresh_total_label()
         self.keyboard.clear()
+
+    def _toggle_time_display(self) -> None:
+        self.config.show_remaining = not self.config.show_remaining
+        self._refresh_total_label()
+
+    def _refresh_total_label(self) -> None:
+        """The right-hand clock: total length, or what is left of it.
+
+        Counting down has to be recomputed as the playhead moves, where the
+        total never changes, so this is called from the progress tick as well
+        as the places that set a song up.
+        """
+        song = self.player.song
+        if song is None:
+            self.total_label.setText(format_time(0))
+        elif self.config.show_remaining:
+            left = max(0.0, song.duration - self.player.position)
+            self.total_label.setText(f"-{format_time(left)}")
+        else:
+            self.total_label.setText(format_time(song.duration))
 
     def _on_progress(self, position: float, held: list) -> None:
         self.keyboard.set_held(held)
         self.elapsed_label.setText(format_time(position))
+        if self.config.show_remaining:
+            self._refresh_total_label()
         song = self.player.song
         if song and song.duration > 0 and not self._seeking:
             self.seek.setValue(int(1000 * min(1.0, position / song.duration)))

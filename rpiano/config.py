@@ -49,6 +49,9 @@ class AppConfig:
     retrigger_gap_ms: int = 20
     batch_window_ms: int = 8
 
+    # Clock on the right of the seek bar: total length, or time remaining.
+    show_remaining: bool = False
+
     always_on_top: bool = False
     opacity: int = 100
 
