@@ -491,6 +491,55 @@ check("range test covers exactly the 27 extended notes",
 check("range test on a 61-key layout is empty",
       len(range_test(build_61()).events) == 0)
 
+# ------------------------------------------------------ MALFORMED FILES
+
+# A single data byte over 127 makes a whole file unreadable, because the parser
+# cannot tell a stray data byte from the start of the next command. Real files
+# in the wild have exactly this damage, so the loader clamps rather than
+# refusing. Skipped rather than failed without mido, since the rest of this
+# suite deliberately needs neither mido nor a MIDI file on disk.
+try:
+    import os
+    import struct
+    import tempfile
+    from pathlib import Path
+
+    import mido
+
+    from rpiano.midi_loader import load_song
+
+    # One note whose velocity byte is 135, then a note-off and end-of-track.
+    track = bytes([
+        0x00, 0x90, 0x3C, 0x87,              # note_on C4, velocity 135 - bad
+        0x83, 0x60, 0x80, 0x3C, 0x00,        # 480 ticks later, note_off C4
+        0x00, 0xFF, 0x2F, 0x00,              # end of track
+    ])
+    raw = (b"MThd" + struct.pack(">IHHH", 6, 0, 1, 480)
+           + b"MTrk" + struct.pack(">I", len(track)) + track)
+    with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as handle:
+        handle.write(raw)
+        broken = handle.name
+
+    # The byte really is rejected by default, or this proves nothing.
+    try:
+        mido.MidiFile(broken)
+        rejected = False
+    except Exception:
+        rejected = True
+    check("a data byte over 127 is genuinely unreadable by default", rejected)
+
+    song = load_song(Path(broken))
+    ons = [e for e in song.events if e.on]
+    check("the loader reads a file with an out-of-range data byte anyway",
+          len(ons) == 1 and ons[0].note == 60,
+          f"{len(ons)} notes" + (f", note {ons[0].note}" if ons else ""))
+    check("the out-of-range velocity is clamped, not dropped",
+          bool(ons) and ons[0].velocity == 127,
+          str(ons[0].velocity) if ons else "no note")
+    os.unlink(broken)
+except ImportError:
+    print("SKIP  malformed-file checks (mido not installed)")
+
 print()
 print(f"{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

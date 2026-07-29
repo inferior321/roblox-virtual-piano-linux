@@ -144,7 +144,13 @@ class _TickClock:
 
 def load_song(path, include_drums: bool = False) -> Song:
     path = Path(path)
-    mid = mido.MidiFile(str(path))
+    # clip=True clamps out-of-range data bytes to 127 instead of refusing the
+    # file. A single velocity byte over 127 is enough to make a whole file
+    # unreadable, because the parser cannot tell a stray data byte from the
+    # start of the next command and everything after it decodes as rubbish.
+    # Nothing is lost by clamping: the only bytes affected are velocities, and
+    # velocity is unrepresentable on a keyboard piano, so the player ignores it.
+    mid = mido.MidiFile(str(path), clip=True)
     tempo_map = _build_tempo_map(mid)
     clock = _TickClock(tempo_map, mid.ticks_per_beat or 480)
 

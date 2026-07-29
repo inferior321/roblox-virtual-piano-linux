@@ -173,6 +173,14 @@ real limit of the keyboard and nothing can be done about it. It does *not*
 count two parts playing the same note at once, which is common and handled: the
 key stays down until the last part lets go, rather than the first.
 
+**A file sounds wrong but the Log looks clean.** Suspect the arrangement rather
+than the timing. A handful of pitches repeating hundreds of times in the bass on
+a fixed grid is a drum kit that has lost its channel — check the Details tab for
+a single track on a single channel, which is what a whole band flattened onto
+one piano looks like. Dropping everything below C2 usually removes it: untick
+**Move notes outside the range**, and leave the transpose alone, since fitting
+would lift the drums up into the tune instead.
+
 **Nothing happens in Roblox.** Status bar bottom-right should say
 `uinput: ready`. If not, `setup-uinput.sh` hasn't taken effect — log out and
 back in. If it says ready, click directly on the piano so the game has focus.

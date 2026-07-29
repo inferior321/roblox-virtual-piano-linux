@@ -23,4 +23,7 @@
 # 1.4.0 corrects the 88-key layout's outer octaves against a working MIDI++
 # config. The middle five octaves agreed exactly; all 27 notes outside them
 # did not, so every one of them had been sending the wrong key.
-__version__ = "1.4.0"
+#
+# 1.4.1 reads files with an out-of-range data byte instead of refusing them.
+# One velocity byte over 127 was enough to lose a whole file.
+__version__ = "1.4.1"
