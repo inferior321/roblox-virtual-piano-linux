@@ -30,4 +30,9 @@
 # 1.5.0 adds a search box over the library. QFileSystemModel only knows the
 # folders you have expanded, so it cannot be filtered recursively; the library
 # is scanned once when a folder loads and every keystroke filters that list.
-__version__ = "1.5.0"
+#
+# 1.5.1 lists search hits flat, each with its folder beneath it, rather than
+# rebuilding the folder tree around them - and bounds the scan, which 1.5.0
+# would have run over an entire home directory when a configured folder had
+# gone missing.
+__version__ = "1.5.1"

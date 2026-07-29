@@ -32,14 +32,19 @@ as normal. The box above it searches **every folder below the root at once**,
 which the tree cannot do on its own — it only knows the folders you have
 expanded.
 
-Type two letters or more and the tree is replaced by the matches, nested inside
-the folders that lead to them and expanded so nothing is hidden. The line under
-the panel counts what matched. Clear the box to go back to browsing. It searches
-file names only, so bear in mind that most of a piano library has "piano" in
-the name — matching on `an` will find a great deal.
+Type two letters or more and the tree is replaced by a flat list of matches:
+each file name with its folder, relative to the folder you opened, in smaller
+grey text beneath it. That second line is what tells apart the several files in
+a library that share a name. The line under the panel counts what matched, and
+clearing the box goes back to browsing.
+
+It searches file names only, so bear in mind that most of a piano library has
+"piano" in the name — matching on `an` will find a great deal.
 
 The box is disabled when the folder holds no MIDI files at all, since there
-would be nothing to search.
+would be nothing to search. Very large trees are scanned up to a limit rather
+than exhaustively; if that happens the Log says so and the search covers what
+was found.
 
 ## Start here: the two test buttons
 

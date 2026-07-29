@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+from PyQt6.QtCore import QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -63,6 +65,72 @@ class ClickableLabel(QLabel):
         ):
             self.clicked.emit()
         super().mouseReleaseEvent(event)
+
+
+class SearchResultDelegate(QStyledItemDelegate):
+    """A search hit drawn as its file name, with the folder path beneath it.
+
+    Two lines rather than a folder tree: a flat list of hits is what you scan
+    when you already know the name, and the path underneath answers "which
+    one?" for the several files in a library that share a name.
+
+    The path is elided from the *left*, so the folder immediately holding the
+    file survives when the line is too long. That end is the one that tells
+    two matches apart.
+    """
+
+    PATH_ROLE = Qt.ItemDataRole.UserRole + 1
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._name = QColor(theme.IVORY)
+        self._path = QColor(theme.MUTED)
+        self._selected = QColor(theme.AMETHYST_DIM)
+
+    def _small(self, font):
+        small = QFont(font)
+        size = font.pointSizeF()
+        small.setPointSizeF(max(6.0, size - 1.5) if size > 0 else 7.0)
+        return small
+
+    def sizeHint(self, option, index):
+        tall = QFontMetrics(option.font).height()
+        short = QFontMetrics(self._small(option.font)).height()
+        return QSize(option.rect.width(), tall + short + 8)
+
+    def paint(self, painter, option, index):
+        painter.save()
+        rect = option.rect
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(rect, self._selected)
+
+        left = rect.left() + 7
+        width = max(10, rect.width() - 14)
+        metrics = QFontMetrics(option.font)
+        small_font = self._small(option.font)
+        small_metrics = QFontMetrics(small_font)
+
+        painter.setFont(option.font)
+        painter.setPen(QPen(self._name))
+        painter.drawText(
+            QRectF(left, rect.top() + 4, width, metrics.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            metrics.elidedText(
+                index.data(Qt.ItemDataRole.DisplayRole) or "",
+                Qt.TextElideMode.ElideRight, width),
+        )
+
+        painter.setFont(small_font)
+        painter.setPen(QPen(self._path))
+        painter.drawText(
+            QRectF(left, rect.top() + 4 + metrics.height(),
+                   width, small_metrics.height()),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            small_metrics.elidedText(
+                index.data(self.PATH_ROLE) or "",
+                Qt.TextElideMode.ElideLeft, width),
+        )
+        painter.restore()
 
 
 class KeyboardStrip(QWidget):
