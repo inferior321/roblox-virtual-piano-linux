@@ -42,7 +42,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from . import theme
+from . import __version__, theme
 from .backends import BACKENDS, BackendError, UinputBackend, XdotoolBackend, make_backend
 from .config import LAYOUT_DIR, AppConfig
 from .layouts import (
@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         self.bridge.log.connect(self.log)
         self.bridge.hotkey.connect(self._on_hotkey)
 
-        self.setWindowTitle("Roblox Piano")
+        self.setWindowTitle(f"Roblox Piano {__version__}")
         self._build_ui()
         self._install_hotkeys()
         self._refresh_backend_status()
@@ -144,7 +144,9 @@ class MainWindow(QMainWindow):
         else:
             self.resize(1180, 820)
 
-        self.log("info", "Ready.")
+        # Version goes in the log too: it is the first thing worth knowing when
+        # someone reports that something behaves differently than described.
+        self.log("info", f"Roblox Piano {__version__} ready.")
         if self.config.last_file and Path(self.config.last_file).is_file():
             self._load_path(Path(self.config.last_file))
 
@@ -1193,7 +1195,18 @@ class MainWindow(QMainWindow):
         self.play_button.style().unpolish(self.play_button)
         self.play_button.style().polish(self.play_button)
         if state == IDLE:
-            self.keyboard.clear()
+            # Stopping rewinds the engine to the start, so the clock and the
+            # slider have to come back with it. Doing this on the state change
+            # rather than on the finished signal covers pressing Stop as well,
+            # which does not finish a song and so never raised that signal -
+            # leaving the display frozen at the time you stopped while the
+            # engine sat at zero, ready to play from the top.
+            self._reset_transport_display()
+
+    def _reset_transport_display(self) -> None:
+        self.seek.setValue(0)
+        self.elapsed_label.setText(format_time(0))
+        self.keyboard.clear()
 
     def _on_progress(self, position: float, held: list) -> None:
         self.keyboard.set_held(held)
@@ -1203,9 +1216,7 @@ class MainWindow(QMainWindow):
             self.seek.setValue(int(1000 * min(1.0, position / song.duration)))
 
     def _on_finished(self) -> None:
-        self.seek.setValue(0)
-        self.elapsed_label.setText("0:00")
-        self.keyboard.clear()
+        self._reset_transport_display()
 
     def _on_error(self, message: str) -> None:
         self.status.showMessage(message, 8000)
