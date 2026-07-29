@@ -86,6 +86,13 @@ octaves are identical to the 61-key layout, and the outer octaves add ctrl —
 ctrl plus the key two octaves inward, which keeps every combination unique.
 This is verified too, and the Range test button checks it in your own game.
 
+Switching layout changes which notes are reachable, so a transpose fitted to
+the layout before it is stale — going from 88 to 61 leaves everything below C2
+folding an octave, quietly. With **Fit automatically** ticked the fit is redone
+on every switch, and the Log says what it chose. Untick it to keep a transpose
+you set by hand, and watch the line under the title for how many notes ended up
+out of range.
+
 Either layout can be adjusted. **Edit mapping** (Input tab) lets you select a
 row, press **Capture key**, and press what that note should actually use;
 saving creates a new custom layout and leaves the built-ins alone. **Import a

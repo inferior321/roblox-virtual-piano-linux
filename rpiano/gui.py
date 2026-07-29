@@ -321,7 +321,14 @@ class MainWindow(QMainWindow):
         self.transpose_label = QLabel("Transpose")
         form.addRow(self.transpose_label, transpose_row)
 
-        self.auto_transpose_check = QCheckBox("Fit automatically when a file is opened")
+        self.auto_transpose_check = QCheckBox(
+            "Fit automatically when a file is opened or the layout changes"
+        )
+        self.auto_transpose_check.setToolTip(
+            "Untick to keep whatever transpose you set by hand.\n"
+            "Switching layout changes which notes are reachable, so a fit made\n"
+            "for the layout before is stale."
+        )
         self.auto_transpose_check.setChecked(self.config.auto_transpose)
         form.addRow("", self.auto_transpose_check)
 
@@ -862,6 +869,15 @@ class MainWindow(QMainWindow):
         self._sync_layout_view()
         self._update_subtitle()
         self.log("info", f"Layout: {layout.name}")
+
+        # Changing layout changes which notes are reachable, so a transpose
+        # fitted to the layout before is now stale - going from 88 to 61 leaves
+        # everything below C2 quietly folding an octave. That is the same
+        # silent wrong the pedal used to be, so the fit is redone here on the
+        # same terms as opening a file: only when the box is ticked, which is
+        # where anyone who sets a transpose by hand has already opted out.
+        if self.song is not None and self.auto_transpose_check.isChecked():
+            self._auto_transpose()
 
         # The 88-key pianos pedal with space; the 61-key ones mostly have no
         # pedal, and there space is jump, so a pedal left on from the layout
