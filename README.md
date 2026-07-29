@@ -86,6 +86,15 @@ octaves are identical to the 61-key layout, and the outer octaves add ctrl —
 ctrl plus the key two octaves inward, which keeps every combination unique.
 This is verified too, and the Range test button checks it in your own game.
 
+**Out of range** decides what happens to notes the layout cannot reach: fold
+them into the nearest octave, or drop them. The line under that box works it
+out for the song you have open and says which to use. Folding is not free — a
+note pushed back into range can land on a key another note is already holding,
+so it buys notes in the wrong octave at the cost of damaging notes that were
+fine. That falls hardest on bass, which folds *up* into the busiest part of the
+keyboard, so a song overflowing at the bottom is usually better off dropping.
+Treble folds down into a sparser register and rarely collides.
+
 Switching layout changes which notes are reachable, so a transpose fitted to
 the layout before it is stale — going from 88 to 61 leaves everything below C2
 folding an octave, quietly. With **Fit automatically** ticked the fit is redone

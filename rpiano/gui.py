@@ -60,6 +60,7 @@ from .player import (
     Player,
     PlayerSettings,
     coverage,
+    out_of_range,
     range_test,
     suggest_transpose,
     test_pattern,
@@ -362,6 +363,14 @@ class MainWindow(QMainWindow):
         self.fold_check.setChecked(self.config.fold_out_of_range)
         self.fold_check.toggled.connect(self._fold_changed)
         form.addRow("Out of range", self.fold_check)
+
+        self.fold_note = QLabel("")
+        self.fold_note.setObjectName("Subtitle")
+        self.fold_note.setWordWrap(True)
+        form.addRow("", self.fold_note)
+        # _update_subtitle drives this from here on, but it bails out with no
+        # song loaded, so the label needs its opening line set here.
+        self._update_fold_recommendation()
 
         self.delay_spin = QDoubleSpinBox()
         self.delay_spin.setRange(0.0, 30.0)
@@ -1037,6 +1046,54 @@ class MainWindow(QMainWindow):
                 action = "folded in" if self.player.settings.fold_out_of_range else "skipped"
                 parts.append(f"{total - playable} out of range, {action}")
         self.subtitle_label.setText("   ·   ".join(parts))
+        self._update_fold_recommendation()
+
+    def _update_fold_recommendation(self) -> None:
+        """Advise on the fold box from what this song actually overflows by.
+
+        Folding is not free. A note pushed back into range can land on a key
+        another note is already holding, and one of them loses it - so folding
+        buys notes in the wrong octave at the cost of damaging notes that were
+        fine. That price falls hardest on bass, which folds *up* into the
+        busiest part of the keyboard, where the tune already is. Treble folds
+        down into a sparser register and usually collides with nothing.
+
+        Hence: overflowing at the bottom, drop; at the top, fold.
+        """
+        if self.song is None:
+            self.fold_note.setText("RECOMMENDATION: N/A — no file loaded.")
+            return
+        below, above, total = out_of_range(
+            self.song,
+            self._current_layout(),
+            self.player.settings.transpose,
+            self.player.settings.enabled_tracks,
+            self.player.settings.enabled_channels,
+        )
+        out = below + above
+        if not total or not out:
+            self.fold_note.setText(
+                "RECOMMENDATION: N/A — every note is in range."
+            )
+            return
+        share = out / total
+        if share < 0.01:
+            self.fold_note.setText(
+                f"RECOMMENDATION: EITHER — {out} of {total} notes "
+                f"({share:.1%}) out of range, too few to hear."
+            )
+        elif below >= above:
+            self.fold_note.setText(
+                f"RECOMMENDATION: OFF — {below} notes ({below / total:.0%}) "
+                f"below the range. Folding jumps them into the middle of the "
+                f"tune, stealing keys from notes already there."
+            )
+        else:
+            self.fold_note.setText(
+                f"RECOMMENDATION: ON — {above} notes ({above / total:.0%}) "
+                f"above the range. Folding drops them an octave into a "
+                f"sparser register, rarely colliding."
+            )
 
     # -- mapping and tests -------------------------------------------------
 

@@ -1082,6 +1082,39 @@ def suggest_transpose(song, layout: Layout, enabled_tracks=None) -> tuple:
     return best_shift, best_hits / total
 
 
+def out_of_range(song, layout: Layout, transpose: int,
+                 enabled_tracks=None, enabled_channels=None) -> tuple:
+    """Note-ons the layout cannot reach, split into those below and above it.
+
+    Returns (below, above, total), counted by occurrence rather than by
+    distinct pitch: what decides whether an overflow matters is how often you
+    hear it, not how many different notes are involved.
+
+    Notes falling in a gap *inside* the range are in neither count. Folding
+    cannot rescue those - there is no octave for them to move to - so they are
+    dropped either way and have no bearing on the choice between the two.
+    """
+    low, high = layout.low, layout.high
+    playable = layout.notes
+    below = above = total = 0
+    for event in song.events:
+        if not event.on:
+            continue
+        if enabled_tracks and event.track not in enabled_tracks:
+            continue
+        if enabled_channels and event.channel not in enabled_channels:
+            continue
+        total += 1
+        note = event.note + transpose
+        if note in playable:
+            continue
+        if note < low:
+            below += 1
+        elif note > high:
+            above += 1
+    return below, above, total
+
+
 def coverage(song, layout: Layout, transpose: int, enabled_tracks=None) -> tuple:
     counts, total = _pitch_counts(song, enabled_tracks)
     if not total:

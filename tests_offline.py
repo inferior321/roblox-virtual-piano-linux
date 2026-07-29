@@ -12,6 +12,7 @@ from rpiano.player import (
     Player,
     PlayerSettings,
     coverage,
+    out_of_range,
     suggest_transpose,
     test_pattern,
     range_test,
@@ -366,6 +367,28 @@ check("auto-transpose pulls a too-high song into range",
 song = FakeSong([E(i * 0.05, True, n) for i, n in enumerate(range(60, 72))])
 shift, _ = suggest_transpose(song, build_61())
 check("auto-transpose leaves an in-range song alone", shift == 0, f"shift={shift}")
+
+# The fold-or-drop recommendation rests on which end a song overflows at, so
+# the two ends have to be counted separately.
+low_song = FakeSong([E(i * 0.05, True, n) for i, n in enumerate([28, 30, 33, 60, 64, 67])])
+below, above, total = out_of_range(low_song, build_61(), 0)
+check("out-of-range counts a bass overflow at the bottom",
+      (below, above, total) == (3, 0, 6), f"{below} below, {above} above, {total} total")
+
+high_song = FakeSong([E(i * 0.05, True, n) for i, n in enumerate([60, 64, 100, 104])])
+below, above, total = out_of_range(high_song, build_61(), 0)
+check("out-of-range counts a treble overflow at the top",
+      (below, above, total) == (0, 2, 4), f"{below} below, {above} above, {total} total")
+
+below, above, total = out_of_range(low_song, build_61(), 8)
+check("out-of-range respects the transpose",
+      (below, above, total) == (0, 0, 6), f"{below} below, {above} above at +8")
+
+mixed = FakeSong([E(0.0, True, 28, track=0), E(0.1, True, 100, track=1),
+                  E(0.2, True, 60, track=0)])
+below, above, total = out_of_range(mixed, build_61(), 0, enabled_tracks={0})
+check("out-of-range respects the track filter",
+      (below, above, total) == (1, 0, 2), f"{below} below, {above} above, {total} total")
 
 song = FakeSong([E(i * 0.05, True, n) for i, n in enumerate(range(21, 109))])
 playable, total = coverage(song, build_88(), 0)
