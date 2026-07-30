@@ -173,6 +173,14 @@ seeking back through a passage finds the same slip in the same place. **Reroll**
 keeps the settings and deals a different performance. The Log names the number
 it rolled, so a good one can come back.
 
+The tick box works on a song that is already playing: switch it on or off
+mid-song and you hear the difference from that moment. The rest of the tab
+waits until the music is paused or stopped, and greys out while it plays. That
+is not an oversight — a change is applied by working the rest of the
+performance out again, which lets go of every key that is down for an instant.
+That is worth it for one deliberate click on the tick box. It is not worth it
+for every step of dragging a spin box, which is what would happen otherwise.
+
 Everything is capped at what a person could plausibly do. Two things are
 deliberately absent: how hard a key is struck, because a Roblox key has no such
 thing and it would only ever colour the audio preview; and missing the shift on

@@ -36,7 +36,7 @@ the same weak spot every time.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from .layouts import WHITE_KEY_ROW
 
@@ -131,6 +131,38 @@ class Report:
             if count:
                 parts.append(f"{count} {name}")
         return f"Humanizer: {', '.join(parts)}."
+
+
+def _remake(event, time_: float, note: int):
+    """A copy of an event at a new time, or playing a new note.
+
+    dataclasses.replace() does this too, and does it by introspecting the
+    fields on every call - which on a large arrangement was most of the cost of
+    the whole pass. Building one directly is the same thing without the
+    lookups, and an event that has not actually moved is handed back as it is.
+    """
+    if time_ == event.time and note == event.note:
+        return event
+    return type(event)(
+        time=time_,
+        on=event.on,
+        note=note,
+        velocity=event.velocity,
+        track=event.track,
+        channel=event.channel,
+    )
+
+
+def _flip(event):
+    """The same event the other way round: a press becomes a release."""
+    return type(event)(
+        time=event.time,
+        on=not event.on,
+        note=event.note,
+        velocity=event.velocity,
+        track=event.track,
+        channel=event.channel,
+    )
 
 
 def _reverse(layout) -> dict:
@@ -309,14 +341,9 @@ def humanize(
                 if nearby:
                     brushed = rng.choice(nearby) - transpose
                     at = max(0.0, start - brush_lead)
-                    extra.append(replace(event, time=at, note=brushed, on=True))
+                    extra.append(_remake(event, at, brushed))
                     extra.append(
-                        replace(
-                            event,
-                            time=at + brush_lead * 0.6,
-                            note=brushed,
-                            on=False,
-                        )
+                        _remake(_flip(event), at + brush_lead * 0.6, brushed)
                     )
                     report.brushed += 1
                     last_mistake = event.time
@@ -327,10 +354,8 @@ def humanize(
                 # press, and something left to hear afterwards.
                 if length is not None and length > gap * 2 + 0.06:
                     cut = start + length * 0.45
-                    extra.append(replace(event, time=cut, note=note, on=False))
-                    extra.append(
-                        replace(event, time=cut + gap * 2, note=note, on=True)
-                    )
+                    extra.append(_remake(_flip(event), cut, note))
+                    extra.append(_remake(event, cut + gap * 2, note))
                     report.doubled += 1
                     last_mistake = event.time
                 else:
@@ -346,10 +371,10 @@ def humanize(
             continue
         if index in starts:
             time_, note = starts[index]
-            out.append(replace(event, time=time_, note=note))
+            out.append(_remake(event, time_, note))
         elif index in ends:
             time_, note = ends[index]
-            out.append(replace(event, time=time_, note=note))
+            out.append(_remake(event, time_, note))
         else:
             out.append(event)
     out.extend(extra)

@@ -1028,6 +1028,41 @@ check("the diagnostics are exempt from all of it",
       quiet.mistakes == 0 and quiet.loosened == 0
       and kept == test_pattern(build_61()).events)
 
+# Switching the Humanizer on or off is the one thing that has to reach a song
+# already playing: it is a tick box, and a tick box that does nothing until the
+# next play is a tick box that looks broken.
+hz_backend = TimedBackend()
+hz_player = Player(hz_backend, build_61(), PlayerSettings(**BASE))
+hz_player.load(hz_song)
+check("replanning does nothing when nothing is playing",
+      hz_player.replan() is None)
+
+hz_player.play()
+hz_start = time.time()
+while hz_player.state == "idle" and time.time() - hz_start < 3:
+    time.sleep(0.002)
+while hz_player.position < 1.0 and time.time() - hz_start < 8:
+    time.sleep(0.005)
+playing_ok = hz_player.state == "playing"
+written = list(hz_song.events)
+
+hz_player.settings.humanize = Options(enabled=True, rate=BUSIEST_RATE, seed=4)
+switched_on = hz_player.replan()
+time.sleep(0.3)
+check("switching it on reaches a song already playing",
+      playing_ok and switched_on is not None and switched_on.mistakes > 0
+      and hz_player.state == "playing",
+      switched_on.summary() if switched_on else "nothing came back")
+
+before = hz_player.position
+hz_player.settings.humanize.enabled = False
+hz_player.replan()
+time.sleep(0.3)
+check("and switching it off puts the written notes back, mid-song",
+      hz_player._events == written and hz_player.position > before,
+      f"{len(hz_player._events)} events, {before:.1f}s -> {hz_player.position:.1f}s")
+hz_player.stop()
+
 check("looseness is capped at what a person could plausibly do",
       MAX_TIMING_MS <= 50 and MAX_ROLL_MS <= 60,
       f"timing {MAX_TIMING_MS}ms, roll {MAX_ROLL_MS}ms")

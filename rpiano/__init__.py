@@ -120,4 +120,12 @@
 #
 # Also: the Timing tab now says in plain words what each of its five numbers
 # does, rather than leaving that to the tooltips.
-__version__ = "1.12.0"
+#
+# 1.12.1 makes the Humanizer tick box reach a song already playing. The
+# performance is settled once before the first note, which is what makes a run
+# repeatable - but it left the one control anybody would test doing nothing at
+# all, while the line under the dial updated as though it had. Switching it now
+# works the rest of the performance out again and carries on from the same
+# moment. The rest of the tab is locked while the music runs, since applying a
+# change drops every key that is down and that is no way to drag a spin box.
+__version__ = "1.12.1"

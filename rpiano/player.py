@@ -187,6 +187,40 @@ class Player:
         self._sustain_index = 0
         self.stats.reset()
 
+    def replan(self):
+        """Rebuild the performance around where the playhead already is.
+
+        Returns the report, or None if there was nothing playing to replan.
+
+        The Humanizer is settled once before the first note, which is what
+        makes a run repeatable - but it leaves switching it on or off mid-song
+        doing nothing at all, and every other control in the program applies
+        as you touch it. This is the way out: plan again and carry on from the
+        same moment, which is a seek to where you already are.
+
+        Held keys are let go first. Under the new plan a note being held might
+        be one of the ones that never sounds, and its release would have gone
+        with it - a key held down for the rest of the song.
+        """
+        if self.song is None or self._state == IDLE:
+            # Nothing is playing, and the next play plans from scratch.
+            return None
+        # Planned before the lock is taken. On a large arrangement the pass is
+        # long enough that holding the player thread off for it would be an
+        # audible stall, and all it needs the lock for is the swap.
+        events, report = plan(self.song, self.layout, self.settings)
+        with self._lock:
+            if self.song is None or self._state == IDLE:
+                return None
+            self._events = events
+            self._panic()
+            self._reindex(self._position)
+        if report.mistakes or report.loosened:
+            self.on_log("info", report.summary())
+        # Handed back so the caller need not plan the same thing again just to
+        # say how many there are.
+        return report
+
     def set_layout(self, layout: Layout) -> None:
         with self._lock:
             self._panic()
@@ -1012,16 +1046,20 @@ class Player:
             return
         self._panic()
         self._position = target
-        events = self._events
-        index = 0
-        while index < len(events) and events[index].time < target:
-            index += 1
-        self._index = index
+        self._reindex(target)
         sustain = self.song.sustain
         sindex = 0
         while sindex < len(sustain) and sustain[sindex].time < target:
             sindex += 1
         self._sustain_index = sindex
+
+    def _reindex(self, target: float) -> None:
+        """Point the playhead at the first event due at or after `target`."""
+        events = self._events
+        index = 0
+        while index < len(events) and events[index].time < target:
+            index += 1
+        self._index = index
         self._count_remaining_offs()
 
 

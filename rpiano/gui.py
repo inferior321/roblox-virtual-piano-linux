@@ -981,9 +981,11 @@ class MainWindow(QMainWindow):
         outer.addLayout(form)
         outer.addStretch(1)
         outer.addWidget(self._rule())
-        outer.addLayout(self._defaults_row(
-            self._reset_humanize, "everything on this tab"))
+        defaults = self._defaults_row(self._reset_humanize, "everything on this tab")
+        self.humanize_defaults = defaults.itemAt(defaults.count() - 1).widget()
+        outer.addLayout(defaults)
 
+        self._humanize_cache = None
         self._humanize_widgets = [
             self.hz_timing_spin, self.hz_length_spin, self.hz_roll_spin,
             self.hz_drift_combo, self.hz_rate_spin, self.hz_slip_check,
@@ -1408,14 +1410,33 @@ class MainWindow(QMainWindow):
         options.seed = self.config.humanize_seed
 
     def _humanize_enable(self) -> None:
+        """The tick box is always live; the rest waits for the music to stop.
+
+        Switching it on or off mid-song replans on the spot, which is one
+        deliberate act and worth the moment of silence it costs. Dragging a
+        spin box is not - it would replan on every step of the drag, and each
+        one of those drops every key that is down. So they are locked while
+        the song is running, and freed the moment it is paused or stopped.
+        """
+        settled = self.player.state in (IDLE, PAUSED)
         on = self.humanize_check.isChecked()
         for widget in self._humanize_widgets:
-            widget.setEnabled(on)
+            widget.setEnabled(on and settled)
+        self.humanize_defaults.setEnabled(settled)
         self._update_humanize_note()
 
     def _humanize_changed(self, field_name: str, config_name: str, value) -> None:
         setattr(self.config, config_name, value)
         setattr(self.player.settings.humanize, field_name, value)
+        # Paused counts as mid-song: the plan the rest of it will be played
+        # from is already made, so a change has to go into it now or it would
+        # not be heard until the song after this one. It hands back what it
+        # worked out, which is exactly what the line below the dial wants -
+        # planning it twice for the same answer is a visible pause on a big
+        # arrangement.
+        report = self.player.replan()
+        if report is not None and self.song is not None:
+            self._humanize_cache = (self._humanize_key(), report)
         self._update_humanize_note()
 
     def _humanize_drift_changed(self, index: int) -> None:
@@ -1424,10 +1445,12 @@ class MainWindow(QMainWindow):
         )
 
     def _humanize_toggled(self, checked: bool) -> None:
+        live = self.player.state in (PLAYING, COUNTING_IN, PAUSED)
+        rest = " Takes effect from here on." if live else ""
+        self.log("info", ("Humanizer on." if checked
+                          else "Humanizer off: playing exactly as written.") + rest)
         self._humanize_changed("enabled", "humanize", checked)
         self._humanize_enable()
-        self.log("info", "Humanizer on." if checked
-                 else "Humanizer off: playing exactly as written.")
 
     def _humanize_reroll(self) -> None:
         self._humanize_changed(
@@ -1450,18 +1473,50 @@ class MainWindow(QMainWindow):
         if self.song is None:
             self.humanize_note.setText("Open a song and this says how many to expect.")
             return
-        _, report = plan(self.song, self._current_layout(), self.player.settings)
+        report = self._humanize_report()
         if not self.player.settings.humanize.kinds():
-            self.humanize_note.setText(
-                "No kinds of mistake are ticked, so it will play loose but "
-                "never wrong."
+            text = ("No kinds of mistake are ticked, so it will play loose but "
+                    "never wrong.")
+        else:
+            text = (
+                f"About {report.mistakes} in this song, spread over "
+                f"{format_time(self.song.duration)}, and never two closer "
+                "together than a third of a second."
             )
-            return
-        self.humanize_note.setText(
-            f"About {report.mistakes} in this song, spread over "
-            f"{format_time(self.song.duration)}, and never two closer "
-            "together than a third of a second."
+        if self.player.state not in (IDLE, PAUSED):
+            text += " Pause or stop to change these."
+        self.humanize_note.setText(text)
+
+    def _humanize_key(self) -> tuple:
+        """Everything the count depends on, so a repeat can be recognised."""
+        options = self.player.settings.humanize
+        settings = self.player.settings
+        return (
+            id(self.song), self._current_layout().ident, settings.transpose,
+            None if settings.enabled_tracks is None
+            else tuple(sorted(settings.enabled_tracks)),
+            None if settings.enabled_channels is None
+            else tuple(sorted(settings.enabled_channels)),
+            options.enabled, options.timing_ms, options.length_ms,
+            options.roll_ms, options.drift, options.rate, options.slip,
+            options.miss, options.brush, options.double, options.repeatable,
+            options.seed,
         )
+
+    def _humanize_report(self):
+        """The count for the song as it stands, worked out at most once.
+
+        The pass is a few hundred milliseconds on a large arrangement, and this
+        line is refreshed by anything that touches the song - so without a
+        cache, starting or pausing a song would run it again for an answer that
+        cannot have changed.
+        """
+        key = self._humanize_key()
+        if self._humanize_cache is not None and self._humanize_cache[0] == key:
+            return self._humanize_cache[1]
+        _, report = plan(self.song, self._current_layout(), self.player.settings)
+        self._humanize_cache = (key, report)
+        return report
 
     def _reset_humanize(self) -> None:
         fresh = AppConfig()
@@ -2085,6 +2140,7 @@ class MainWindow(QMainWindow):
         self.play_button.setProperty("live", "true" if live else "false")
         self.play_button.style().unpolish(self.play_button)
         self.play_button.style().polish(self.play_button)
+        self._humanize_enable()
         if state == IDLE:
             # Stopping rewinds the engine to the start, so the clock and the
             # slider have to come back with it. Doing this on the state change
