@@ -48,7 +48,17 @@ from PyQt6.QtWidgets import (
 )
 
 from . import __version__, theme
-from .backends import BACKENDS, BackendError, UinputBackend, XdotoolBackend, make_backend
+from .backends import (
+    BACKENDS,
+    SOUNDFONT_MAGIC,
+    BackendError,
+    SoundfontBackend,
+    UinputBackend,
+    XdotoolBackend,
+    make_backend,
+    read_soundfont_presets,
+    soundfont_available,
+)
 from .config import LAYOUT_DIR, AppConfig
 from .layouts import (
     builtin_layouts,
@@ -150,6 +160,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Roblox Piano {__version__}")
         self._build_ui()
         self._install_hotkeys()
+        self._reload_presets()
+        self._refresh_soundfont_state()
+        self._configure_preview()
         self._refresh_backend_status()
         self._sync_layout_view()
         self._apply_window_options()
@@ -611,6 +624,36 @@ class MainWindow(QMainWindow):
         self.backend_note.setObjectName("Subtitle")
         self.backend_note.setWordWrap(True)
         form.addRow("", self.backend_note)
+
+        sf_row = QHBoxLayout()
+        self.soundfont_button = QPushButton("Choose soundfont")
+        self.soundfont_button.setToolTip(
+            "A .sf2 file of your own. Nothing is bundled, and the file stays\n"
+            "where it is - only its path is remembered."
+        )
+        self.soundfont_button.clicked.connect(self._choose_soundfont)
+        sf_row.addWidget(self.soundfont_button)
+        self.preset_combo = QComboBox()
+        self.preset_combo.setMinimumWidth(190)
+        self.preset_combo.currentIndexChanged.connect(self._preset_changed)
+        sf_row.addWidget(self.preset_combo, 1)
+        form.addRow("Soundfont", sf_row)
+
+        self.soundfont_note = QLabel("")
+        self.soundfont_note.setObjectName("Subtitle")
+        self.soundfont_note.setWordWrap(True)
+        form.addRow("", self.soundfont_note)
+
+        volume_row = QHBoxLayout()
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(self.config.preview_volume)
+        self.volume_slider.valueChanged.connect(self._volume_changed)
+        volume_row.addWidget(self.volume_slider, 1)
+        self.volume_label = QLabel(str(self.config.preview_volume))
+        self.volume_label.setObjectName("Clock")
+        volume_row.addWidget(self.volume_label)
+        form.addRow("Preview volume", volume_row)
 
         test_row = QHBoxLayout()
         test = QPushButton("Play a test scale")
@@ -1107,6 +1150,7 @@ class MainWindow(QMainWindow):
         self.config.layout = ident
         layout = self.layouts[ident]
         self.player.set_layout(layout)
+        self._configure_preview()
         self._sync_layout_view()
         self._update_subtitle()
         self.log("info", f"Layout: {layout.name}")
@@ -1217,6 +1261,7 @@ class MainWindow(QMainWindow):
         self.sustain_combo.setEnabled(enabled)
         self.sustain_custom.setEnabled(enabled and custom)
         self.player.settings.sustain_key = key if enabled else ""
+        self._configure_preview()
 
     def _cutoff_changed(self, value: int) -> None:
         self.player.settings.sustain_cutoff = value
@@ -1234,6 +1279,140 @@ class MainWindow(QMainWindow):
             self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on_top)
             self.show()
 
+    # -- audio preview -----------------------------------------------------
+
+    @staticmethod
+    def _soundfont_stamp(path: Path) -> str:
+        """Size and modification time, so a swapped file is noticed.
+
+        Without it, dropping a different soundfont at the same path would keep
+        serving the presets cached from the old one.
+        """
+        info = path.stat()
+        return f"{info.st_size}:{int(info.st_mtime)}"
+
+    def _soundfont_ready(self) -> tuple:
+        """(ok, message) for whether audio preview can be used right now.
+
+        Cheap on purpose. The full read happens once, when a soundfont is
+        chosen; after that this only confirms the file is still there,
+        unchanged, and really is a soundfont.
+        """
+        ok, message = soundfont_available()
+        if not ok:
+            return False, message
+        if not self.config.soundfont_path:
+            return False, "No soundfont loaded. Choose a .sf2 file to use audio preview."
+        path = Path(self.config.soundfont_path)
+        if not path.is_file():
+            return False, f"Soundfont missing: {path}"
+        try:
+            with path.open("rb") as handle:
+                if handle.read(4) != SOUNDFONT_MAGIC:
+                    return False, f"{path.name} is not a soundfont."
+            if self._soundfont_stamp(path) != self.config.soundfont_stamp:
+                return False, f"{path.name} has changed. Choose it again to re-read it."
+        except OSError as exc:
+            return False, f"Cannot read {path.name}: {exc}"
+        if not self.config.soundfont_presets:
+            return False, "No instruments cached. Choose the soundfont again."
+        return True, f"{path.name}   ·   {len(self.config.soundfont_presets)} instruments"
+
+    def _choose_soundfont(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a soundfont", self.config.soundfont_path or str(Path.home()),
+            "Soundfonts (*.sf2 *.SF2)",
+        )
+        if not path:
+            return
+        chosen = Path(path)
+        # The one full check: hand it to the synth and see. Slow on a large
+        # file, hence the wait cursor and hence caching the result.
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            presets = read_soundfont_presets(chosen)
+            stamp = self._soundfont_stamp(chosen)
+        except Exception as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Soundfont", f"Could not use that file.\n\n{exc}")
+            self.log("error", f"Soundfont rejected: {exc}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        self.config.soundfont_path = str(chosen)
+        self.config.soundfont_stamp = stamp
+        self.config.soundfont_presets = [list(p) for p in presets]
+        self.config.soundfont_bank, self.config.soundfont_program = presets[0][0], presets[0][1]
+        self.log("info", f"Soundfont loaded: {chosen.name}, "
+                         f"{len(presets)} instruments.")
+        self._reload_presets()
+        self._refresh_soundfont_state()
+
+    def _reload_presets(self) -> None:
+        self.preset_combo.blockSignals(True)
+        self.preset_combo.clear()
+        for bank, program, name in self.config.soundfont_presets:
+            self.preset_combo.addItem(f"{name}", (bank, program))
+        index = self.preset_combo.findData(
+            (self.config.soundfont_bank, self.config.soundfont_program)
+        )
+        self.preset_combo.setCurrentIndex(max(0, index))
+        self.preset_combo.blockSignals(False)
+
+    def _preset_changed(self, _index: int) -> None:
+        chosen = self.preset_combo.currentData()
+        if not chosen:
+            return
+        self.config.soundfont_bank, self.config.soundfont_program = chosen
+        backend = self.player.backend
+        if isinstance(backend, SoundfontBackend):
+            backend.bank, backend.program = chosen
+            # Only takes effect next time it opens, which is the next song.
+            self.log("info", f"Preview instrument: {self.preset_combo.currentText()}")
+
+    def _volume_changed(self, value: int) -> None:
+        self.config.preview_volume = value
+        self.volume_label.setText(str(value))
+        backend = self.player.backend
+        if isinstance(backend, SoundfontBackend):
+            backend.set_gain(self._preview_gain())
+
+    def _preview_gain(self) -> float:
+        # FluidSynth gain runs 0..10 and is loud well before the top; a
+        # hundredth of the slider keeps the useful range across the whole
+        # travel rather than bunched at the bottom.
+        return self.config.preview_volume / 100.0
+
+    def _refresh_soundfont_state(self) -> None:
+        """Grey out audio preview unless a soundfont is genuinely usable."""
+        ok, message = self._soundfont_ready()
+        self.soundfont_note.setText(message)
+        self.preset_combo.setEnabled(ok)
+        self.volume_slider.setEnabled(ok)
+        self.volume_label.setEnabled(ok)
+
+        # The entry stays listed, so it is discoverable, but cannot be picked.
+        index = self.backend_combo.findText(SoundfontBackend.name)
+        if index >= 0:
+            model = self.backend_combo.model()
+            model.item(index).setEnabled(ok)
+        if not ok and self.config.backend == SoundfontBackend.name:
+            # Configured but no longer usable: fall back rather than fail later.
+            self.backend_combo.setCurrentText("uinput")
+
+    def _configure_preview(self) -> None:
+        """Give the preview backend the mapping it reads keystrokes through."""
+        backend = self.player.backend
+        if isinstance(backend, SoundfontBackend):
+            backend.configure(
+                self._current_layout(), self.player.settings.sustain_key
+            )
+            backend.path = self.config.soundfont_path
+            backend.bank = self.config.soundfont_bank
+            backend.program = self.config.soundfont_program
+            backend.set_gain(self._preview_gain())
+
     def _backend_changed(self, name: str) -> None:
         try:
             self.player.set_backend(make_backend(name))
@@ -1241,6 +1420,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Backend", str(exc))
             return
         self.config.backend = name
+        self._configure_preview()
         self._refresh_backend_status()
         self.log("info", f"Backend: {name}")
 

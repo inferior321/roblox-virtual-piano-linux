@@ -52,6 +52,18 @@ class AppConfig:
     # Clock on the right of the seek bar: total length, or time remaining.
     show_remaining: bool = False
 
+    # The audio-preview backend. The soundfont is whichever file you point at;
+    # nothing is bundled. Its presets and a size/mtime stamp are cached so the
+    # dropdown fills at startup without loading the file again - swap a
+    # different soundfont in at the same path and the stamp no longer matches,
+    # which is what forces a re-read.
+    soundfont_path: str = ""
+    soundfont_stamp: str = ""
+    soundfont_presets: list = field(default_factory=list)
+    soundfont_bank: int = 0
+    soundfont_program: int = 0
+    preview_volume: int = 40
+
     always_on_top: bool = False
     opacity: int = 100
 

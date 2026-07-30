@@ -53,6 +53,30 @@ would be nothing to search. Very large trees are scanned up to a limit rather
 than exhaustively; if that happens the Log says so and the search covers what
 was found.
 
+## Hearing it without the game
+
+**audio preview** is a fourth entry in **Send keys via** (Input tab). Choosing
+it sends nothing to Roblox — the keystrokes are turned back into notes and
+played through a soundfont, so you can hear what a mapping and a set of timing
+values actually produce before going near the game.
+
+It learns nothing from the MIDI file. It receives the same key presses Roblox
+would, and asks the layout the same question Roblox asks: *which note is this
+key, with these modifiers held?* A mapping that is wrong here is wrong in the
+game. The minimum-note floor, the retrigger gaps and the chord roll from
+modifier dwell are all audible, because they are still what decides when those
+keys arrive. The sustain pedal is honoured too, so notes ring on past their
+release the way they would with a pedal down.
+
+No soundfont is bundled. Point **Choose soundfont** at a `.sf2` file of your
+own and pick an instrument from it; the path is remembered and the file stays
+where it is. Until one is loaded the entry is listed but greyed out, with the
+reason shown beneath it. A chosen file is read in full once, so a corrupt or
+mislabelled file is rejected there and then rather than failing mid-song; after
+that only its path, signature and size are checked at startup. Replace the file
+at the same path and it asks you to choose it again, since its instruments will
+have changed.
+
 ## Start here: the two test buttons
 
 Both are in the **Input** tab.

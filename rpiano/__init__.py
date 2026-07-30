@@ -39,4 +39,8 @@
 # 1.6.0 searches folder names too, under a FOLDERS heading above the songs.
 # A folder result opens where it sits and browses as deep as you like, filled
 # on demand rather than up front, and only the outermost match is listed.
-__version__ = "1.6.0"
+#
+# 1.7.0 adds an audio-preview backend: the keystrokes are read back through the
+# layout and played through a soundfont of your own, so a mapping can be heard
+# before the game is involved. Nothing is bundled and nothing reaches Roblox.
+__version__ = "1.7.0"

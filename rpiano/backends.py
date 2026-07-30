@@ -23,6 +23,7 @@ import shutil
 import struct
 import subprocess
 import time
+from pathlib import Path
 
 from .keycodes import (
     EV_KEY,
@@ -341,10 +342,209 @@ class NullBackend(Backend):
         self.log.append(("allup", None, ()))
 
 
+SOUNDFONT_MAGIC = b"RIFF"
+
+
+def soundfont_available() -> tuple:
+    """(ok, message) for whether audio preview can work at all."""
+    try:
+        import fluidsynth  # noqa: F401
+    except Exception as exc:
+        return False, f"pyfluidsynth is not usable ({exc}). Re-run install.sh."
+    return True, "Ready."
+
+
+def read_soundfont_presets(path) -> list:
+    """Load a soundfont and return its presets as [(bank, program, name)].
+
+    This is the full check: the file is handed to the synth, so anything that
+    is missing, truncated or not a soundfont fails here rather than the first
+    time a note is due. Slow enough on a large file that the caller caches the
+    result - see AppConfig.soundfont_presets.
+    """
+    import fluidsynth
+
+    synth = fluidsynth.Synth(samplerate=44100.0)
+    try:
+        sfid = synth.sfload(str(path))
+        if sfid == -1:
+            raise BackendError("FluidSynth could not read that file.")
+        presets = []
+        for bank in range(129):
+            for program in range(128):
+                try:
+                    name = synth.sfpreset_name(sfid, bank, program)
+                except Exception:
+                    name = None
+                if name:
+                    presets.append((bank, program, name.strip()))
+        if not presets:
+            raise BackendError("That soundfont contains no instruments.")
+        return presets
+    finally:
+        synth.delete()
+
+
+class SoundfontBackend(Backend):
+    """Turns the keystrokes into sound instead of sending them anywhere.
+
+    The point is that it learns nothing from the MIDI file. It is handed the
+    same key presses the game would receive and asks the layout the same
+    question the game asks - which note is this key, with these modifiers held?
+    - so a mapping that is wrong here is wrong in the game too. The dwell,
+    retrigger gap and minimum-note floor are all audible, because they are
+    still what decides when these calls arrive.
+
+    FluidSynth renders on its own thread, so a note-on from the player thread
+    only queues a voice. Nothing here touches an audio buffer.
+    """
+
+    name = "audio preview"
+    description = "Plays the keystrokes through a soundfont instead of sending them."
+
+    def __init__(self, path: str = "", bank: int = 0, program: int = 0,
+                 gain: float = 0.4):
+        self.path = path
+        self.bank = bank
+        self.program = program
+        self.gain = gain
+        self._synth = None
+        self._sfid = None
+        self._reverse = {}          # (char, frozenset(mods)) -> note
+        self._sustain_char = ""
+        self._mods = set()
+        self._by_key = {}           # char -> note currently sounding for it
+        self._pedal = False
+        self._sustained = set()     # notes held only by the pedal
+
+    # -- configuration -----------------------------------------------------
+
+    def configure(self, layout, sustain_key: str = "") -> None:
+        """Teach it the mapping to read keys back through.
+
+        Rebuilt whenever the layout or the pedal key changes, because that is
+        exactly what changes the meaning of an incoming keystroke.
+        """
+        self._reverse = {
+            (stroke.char, frozenset(stroke.mods)): note
+            for note, stroke in layout.notes.items()
+        }
+        self._sustain_char = sustain_key or ""
+
+    def set_gain(self, gain: float) -> None:
+        self.gain = gain
+        if self._synth is not None:
+            self._synth.setting("synth.gain", gain)
+
+    # -- lifecycle ---------------------------------------------------------
+
+    @staticmethod
+    def availability() -> tuple:
+        return soundfont_available()
+
+    def open(self) -> None:
+        # Kept alive across playbacks: the player opens and closes a backend
+        # around every song, and reloading a soundfont each time would be a
+        # long pause before the first note.
+        if self._synth is not None:
+            return
+        ok, message = soundfont_available()
+        if not ok:
+            raise BackendError(message)
+        if not self.path or not Path(self.path).is_file():
+            raise BackendError(
+                "No soundfont loaded. Choose one in the Input tab first."
+            )
+        import fluidsynth
+
+        synth = fluidsynth.Synth(samplerate=44100.0)
+        synth.setting("synth.gain", self.gain)
+        try:
+            synth.start()
+        except Exception as exc:
+            synth.delete()
+            raise BackendError(f"No audio output available: {exc}") from exc
+        sfid = synth.sfload(str(self.path))
+        if sfid == -1:
+            synth.delete()
+            raise BackendError(f"Could not load {Path(self.path).name}.")
+        synth.program_select(0, sfid, self.bank, self.program)
+        self._synth, self._sfid = synth, sfid
+
+    def close(self) -> None:
+        # Silence, but keep the synth: close runs at the end of every song.
+        self.release_all()
+
+    def __del__(self):
+        if getattr(self, "_synth", None) is not None:
+            try:
+                self._synth.delete()
+            except Exception:
+                pass
+
+    # -- the keys ----------------------------------------------------------
+
+    def key_down(self, char: str) -> None:
+        if self._synth is None:
+            return
+        if char and char == self._sustain_char:
+            self._pedal = True
+            return
+        note = self._reverse.get((char, frozenset(self._mods)))
+        if note is None:
+            return
+        # A key already sounding is being restruck: stop the old voice first,
+        # the way a real key does when it returns.
+        previous = self._by_key.get(char)
+        if previous is not None:
+            self._synth.noteoff(0, previous)
+        self._synth.noteon(0, note, 100)
+        self._by_key[char] = note
+        self._sustained.discard(note)
+
+    def key_up(self, char: str) -> None:
+        if self._synth is None:
+            return
+        if char and char == self._sustain_char:
+            self._pedal = False
+            for note in self._sustained:
+                self._synth.noteoff(0, note)
+            self._sustained.clear()
+            return
+        note = self._by_key.pop(char, None)
+        if note is None:
+            return
+        if self._pedal:
+            # The pedal is down, so lifting the key does not damp the string.
+            self._sustained.add(note)
+        else:
+            self._synth.noteoff(0, note)
+
+    def mods_down(self, mods) -> None:
+        self._mods.update(mods)
+
+    def mods_up(self, mods) -> None:
+        self._mods.difference_update(mods)
+
+    def release_all(self) -> None:
+        if self._synth is None:
+            return
+        for note in list(self._by_key.values()) + list(self._sustained):
+            try:
+                self._synth.noteoff(0, note)
+            except Exception:
+                pass
+        self._by_key.clear()
+        self._sustained.clear()
+        self._mods.clear()
+        self._pedal = False
+
+
 BACKENDS = {
     "uinput": UinputBackend,
     "xdotool": XdotoolBackend,
     "dry run": NullBackend,
+    "audio preview": SoundfontBackend,
 }
 
 

@@ -491,6 +491,78 @@ check("range test covers exactly the 27 extended notes",
 check("range test on a 61-key layout is empty",
       len(range_test(build_61()).events) == 0)
 
+# ------------------------------------------------------- AUDIO PREVIEW
+
+# The preview backend reads keystrokes back through the layout, asking the same
+# question the game asks. No synth is needed for that part, so it is checked
+# with a stub that records instead of sounding.
+from rpiano.backends import SoundfontBackend
+
+
+class StubSynth:
+    def __init__(self):
+        self.events = []
+
+    def noteon(self, _channel, note, _velocity):
+        self.events.append(("on", note))
+
+    def noteoff(self, _channel, note):
+        self.events.append(("off", note))
+
+    def setting(self, *_args):
+        pass
+
+
+preview = SoundfontBackend()
+preview.configure(build_88(), " ")
+preview._synth = StubSynth()
+check("preview reads back every note in the layout",
+      len(preview._reverse) == 88, f"{len(preview._reverse)} entries")
+
+
+def struck(char, mods=()):
+    preview._synth.events.clear()
+    if mods:
+        preview.mods_down(mods)
+    preview.key_down(char)
+    if mods:
+        preview.mods_up(mods)
+    return preview._synth.events
+
+
+seen = struck("t")
+check("a plain key sounds its natural", seen == [("on", 60)], str(seen))
+preview.release_all()
+seen = struck("t", ("shift",))
+check("shift makes the same key sound the sharp", ("on", 61) in seen, str(seen))
+preview.release_all()
+seen = struck("1", ("ctrl",))
+check("ctrl reaches the outer octaves", ("on", 21) in seen, str(seen))
+preview.release_all()
+seen = struck("\\")
+check("a key the layout does not use is ignored", seen == [], str(seen))
+
+# The pedal: lifting a key while it is down must not damp the note.
+preview.release_all()
+preview._synth.events.clear()
+preview.key_down(" ")
+preview.key_down("t")
+preview.key_up("t")
+held = list(preview._synth.events)
+preview.key_up(" ")
+after = list(preview._synth.events)
+check("the sustain pedal keeps a released note ringing",
+      held == [("on", 60)] and after == [("on", 60), ("off", 60)],
+      f"held {held}, after pedal up {after}")
+
+preview.release_all()
+preview._synth.events.clear()
+preview.key_down("u")
+preview.key_up("u")
+check("without the pedal a released key damps at once",
+      preview._synth.events == [("on", 64), ("off", 64)],
+      str(preview._synth.events))
+
 # ------------------------------------------------------ MALFORMED FILES
 
 # A single data byte over 127 makes a whole file unreadable, because the parser
