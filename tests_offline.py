@@ -890,6 +890,16 @@ KEEP = {"soundfont_path", "soundfont_stamp", "soundfont_presets",
 check("no Restore button clears the chosen soundfont",
       not (restored & KEEP), str(sorted(restored & KEEP)))
 
+# The default layout is the wide one, and the pedal it comes with is the pedal
+# that layout wants - a fresh install ticked with no key behind it was the way
+# these two could disagree.
+_default = AppConfig()
+check("the 88-key layout is the default",
+      _default.layout == "roblox_88", _default.layout)
+check("and the default pedal is the one that layout uses",
+      _default.sustain_key == " " and _default.sustain_enabled,
+      repr(_default.sustain_key))
+
 print()
 print(f"{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

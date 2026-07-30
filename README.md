@@ -139,16 +139,20 @@ layout, which refits the transpose if **Fit automatically** is ticked.
 
 ## The layouts
 
+**Roblox 88-key** is the layout Piano Rooms uses, A0 to C8, and the default:
+the middle five octaves are identical to the 61-key layout, and the 27 notes
+outside them walk the same row again with ctrl held, one key per semitone — A0
+is `ctrl+1`, up through `ctrl+t` at B1, resuming at `ctrl+y` for C#7 and ending
+at `ctrl+j` for C8. Black keys out there take a key of their own, so ctrl+shift
+never arises. It is the default because it reaches every note a file can hold
+and gives up nothing in the middle to do it.
+
 **Roblox 61-key** is the standard virtual-piano layout, C2 to C7: white keys
 walk `1234567890qwertyuiop...` and each black key is shift plus the white key
-below it. This is verified, nearly every Roblox piano uses it, and it's the
-default.
+below it. Nearly every Roblox piano takes it. Switch to it if the 88-key
+layout's outer octaves don't land in your game, or if you're playing a piano in
+a browser, where ctrl belongs to the browser and the extra octaves can't work.
 
-**Roblox 88-key** is the layout Piano Rooms uses, A0 to C8: the middle five
-octaves are identical to the 61-key layout, and the 27 notes outside them walk
-the same row again with ctrl held, one key per semitone — A0 is `ctrl+1`, up
-through `ctrl+t` at B1, resuming at `ctrl+y` for C#7 and ending at `ctrl+j` for
-C8. Black keys out there take a key of their own, so ctrl+shift never arises.
 Both layouts were checked note for note against a working MIDI++ config; the
 Range test button plays those 27 notes on their own to confirm it in your game.
 

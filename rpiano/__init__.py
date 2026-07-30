@@ -103,4 +103,10 @@
 # AppConfig is where a default is written down, so a fresh one is the whole
 # answer. It leaves the soundfont and any custom key mapping alone: those cost
 # real work to choose again, and a stray click must not be able to lose them.
-__version__ = "1.10.0"
+#
+# 1.11.0 makes the 88-key layout the default. Both are checked against the same
+# MIDI++ config now, so the reason the narrower one held the spot - that it was
+# the verified one - stopped being true at 1.4.0. The default pedal moves to
+# space with it, which is what that layout uses: a fresh install was otherwise
+# ticked for a pedal with no key behind it.
+__version__ = "1.11.0"

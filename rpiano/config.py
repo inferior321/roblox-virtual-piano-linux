@@ -21,8 +21,12 @@ LAYOUT_DIR = CONFIG_DIR / "layouts"
 class AppConfig:
     midi_folder: str = str(Path.home() / "Music" / "midi")
     last_file: str = ""
-    # The 61-key layout is the verified one, so it is the default.
-    layout: str = "roblox_61"
+    # Both layouts are checked note for note against a working MIDI++ config,
+    # so the wider one is the default: it reaches every note a file can hold,
+    # and its middle five octaves are the 61-key layout unchanged. Games that
+    # cannot take the ctrl-modified octaves - a piano in a browser, where ctrl
+    # is the browser's - want the 61-key layout instead.
+    layout: str = "roblox_88"
     backend: str = "uinput"
 
     transpose: int = 0
@@ -38,8 +42,11 @@ class AppConfig:
 
     # Which key pedals, and whether a pedal is used at all. Kept apart so
     # turning the pedal off remembers the key for when it comes back on.
-    # Defaults to on, so an existing settings file keeps the pedal it had.
-    sustain_key: str = ""
+    # Defaults to on, so an existing settings file keeps the pedal it had, and
+    # to space, which is what the 88-key pianos pedal with - the same pedal
+    # switching to that layout by hand sets, so a fresh install is not left
+    # ticked with no key behind it.
+    sustain_key: str = " "
     sustain_enabled: bool = True
     sustain_cutoff: int = 64
 
