@@ -128,14 +128,59 @@ tens of milliseconds — the white keys have to be struck before shift goes down
 It sounds like a slight roll. That's inherent, not a bug.
 
 So experiment freely: **Restore defaults**, at the bottom of the Playback,
-Timing and Input tabs, puts that tab back where it started, and says in the Log
-what it set. There is nothing to write down before you try a value.
+Timing, Input and Humanizer tabs, puts that tab back where it started, and says
+in the Log what it set. There is nothing to write down before you try a value.
 
 It never touches your soundfont, your instrument or a custom key mapping —
 those cost real work to choose again, so no button can lose them. On the Input
 tab it does switch **Send keys via** back to uinput and set the sustain pedal
-to whatever the current layout wants; on Playback it returns to the 61-key
+to whatever the current layout wants; on Playback it returns to the 88-key
 layout, which refits the transpose if **Fit automatically** is ticked.
+
+## The Humanizer
+
+A real person never plays a piece exactly as written. They land a fraction
+early or late, hold notes a little longer or shorter, and every so often a
+finger lands on the wrong key or misses one. The **Humanizer** tab does the
+same. Leave it off — which it is by default — and the song plays exactly as the
+file says.
+
+It sets two different kinds of thing, and the tab keeps them apart because one
+dial cannot govern both.
+
+**Looseness** is a size, and it touches every note. *Off the beat by* is how far
+ahead or behind the written moment a note can land. *Held for longer or shorter
+by* does the same for how long the key stays down. *Chords spread over* is the
+one to reach for first: five fingers never land at the same instant, and
+spreading them is the most human-sounding thing on the tab. *Leans towards*
+gives it a habit of rushing or dragging, because people are not evenly wrong.
+
+**Mistakes** are rare events, so they get a chance rather than a size: one note
+in however many you choose. Four kinds, each switched on or off — hitting the
+key next to the right one, missing a note completely, brushing a nearby key on
+the way in, and striking the same key twice. The line under the dial says how
+many that works out to for the song you have open, worked out by running the
+real thing rather than by estimating.
+
+A wrong key is a wrong *key*, not a wrong note: the candidates come off the
+layout's own key row, so what sounds is a slip of the finger rather than a jump.
+On the 88-key layout the key beside `ctrl+t` is five and a half octaves away, so
+a candidate has to be both next door on the keyboard and close by in pitch.
+
+**The same mistakes every time** is on by default. A song then goes wrong in the
+same places on every play, the way a player has the same weak spots — and
+seeking back through a passage finds the same slip in the same place. **Reroll**
+keeps the settings and deals a different performance. The Log names the number
+it rolled, so a good one can come back.
+
+Everything is capped at what a person could plausibly do. Two things are
+deliberately absent: how hard a key is struck, because a Roblox key has no such
+thing and it would only ever colour the audio preview; and missing the shift on
+a black key, which is realistic but indistinguishable from the modifier dwell
+being too short, so you would spend an evening fixing a mistake you asked for.
+
+The test scale and range test are exempt — they exist to tell you whether your
+timing values are right, which a deliberate wrong key would make unreadable.
 
 ## The layouts
 

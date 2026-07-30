@@ -850,11 +850,13 @@ _functions = {
     for node in ast.walk(_gui)
     if isinstance(node, ast.FunctionDef)
 }
-RESETS = ("_reset_timing", "_reset_playback", "_reset_input")
+RESETS = ("_reset_timing", "_reset_playback", "_reset_input",
+          "_reset_humanize")
 TABS = {
     "_build_timing_tab": "_reset_timing",
     "_build_playback_tab": "_reset_playback",
     "_build_input_tab": "_reset_input",
+    "_build_humanizer_tab": "_reset_humanize",
 }
 
 check("every tab that should have a Restore defaults button has one",
@@ -899,6 +901,136 @@ check("the 88-key layout is the default",
 check("and the default pedal is the one that layout uses",
       _default.sustain_key == " " and _default.sustain_enabled,
       repr(_default.sustain_key))
+
+# ------------------------------------------------------------ HUMANIZER
+
+from rpiano.humanize import (
+    BUSIEST_RATE,
+    MAX_ROLL_MS,
+    MAX_TIMING_MS,
+    REFRACTORY,
+    Options,
+    humanize,
+    neighbours,
+)
+from rpiano.player import plan, test_pattern
+
+# A scale, one note every 30ms, each held 20ms. Long enough for the rate to
+# mean something and dense enough to catch anything that reorders events.
+hz_events = []
+for step in range(600):
+    pitch = 60 + (step % 24)
+    hz_events.append(E(step * 0.03, True, pitch))
+    hz_events.append(E(step * 0.03 + 0.02, False, pitch))
+hz_events.sort(key=lambda e: (e.time, e.on))
+hz_song = FakeSong(hz_events)
+
+check("off, the events come back exactly as they went in",
+      humanize(hz_events, build_61(), Options(enabled=False))[0] == hz_events)
+
+# A slip is a slip of the finger, so the candidates come off the key row - and
+# on the 88-key layout the key beside ctrl+t (B1) is ctrl+y (C#7), which is
+# next door to the hand and five and a half octaves away to the ear.
+check("a slip goes to the key next door, in pitch order",
+      neighbours(build_61(), 60) == [59, 62],
+      str([note_name(n) for n in neighbours(build_61(), 60)]))
+check("a sharp slips to a sharp, since shift is still held",
+      all("shift" in build_61().notes[n].mods
+          for n in neighbours(build_61(), 61)),
+      str([build_61().notes[n].label() for n in neighbours(build_61(), 61)]))
+check("the 88-key row's discontinuity is not offered as a slip",
+      all(abs(n - 35) <= 4 for n in neighbours(build_88(), 35)),
+      str([note_name(n) for n in neighbours(build_88(), 35)]))
+
+loud = Options(enabled=True, rate=40, slip=True, miss=True, brush=True,
+               double=True, seed=11)
+played, report = humanize(hz_events, build_61(), loud)
+
+# Striking a key twice needs a note long enough to release, wait out the
+# retrigger gap and still have something left to hear, so the kinds are checked
+# on a song played at a human tempo rather than on the dense one above. Each is
+# checked on its own: mixed together the weighting makes a rare kind's absence
+# from any one run a matter of luck rather than of correctness.
+slow_events = []
+for step in range(400):
+    pitch = 60 + (step % 24)
+    slow_events.append(E(step * 0.25, True, pitch))
+    slow_events.append(E(step * 0.25 + 0.2, False, pitch))
+slow_events.sort(key=lambda e: (e.time, e.on))
+
+for kind, counted in (("slip", "slipped"), ("miss", "missed"),
+                      ("brush", "brushed"), ("double", "doubled")):
+    only = Options(enabled=True, rate=BUSIEST_RATE, seed=11, slip=False,
+                   miss=False, brush=False, double=False)
+    setattr(only, kind, True)
+    made = humanize(slow_events, build_61(), only)[1]
+    check(f"it can play the {kind} mistake",
+          getattr(made, counted) > 0 and made.mistakes == getattr(made, counted),
+          made.summary())
+
+check("but never strikes twice a note too short to strike twice",
+      humanize(hz_events, build_61(),
+               Options(enabled=True, rate=BUSIEST_RATE, seed=11, slip=False,
+                       miss=False, brush=False, double=True))[1].doubled == 0)
+
+check("what comes out is still in order",
+      played == sorted(played, key=lambda e: (e.time, e.on)))
+check("nothing is scheduled before the song starts",
+      all(event.time >= 0 for event in played))
+check("every note it plays is one the layout can reach",
+      all(event.note in build_61().notes for event in played))
+
+# A note-off for a key that was never pressed leaves the count negative, and a
+# note-on never released leaves it positive: either one is a stuck key.
+depth = {}
+worst = 0
+for event in played:
+    depth[event.note] = depth.get(event.note, 0) + (1 if event.on else -1)
+    worst = min(worst, depth[event.note])
+check("no note is released without having been pressed", worst == 0, f"low water {worst}")
+check("and nothing is left held at the end",
+      all(count == 0 for count in depth.values()))
+
+first, _ = humanize(hz_events, build_61(), Options(enabled=True, rate=40, seed=5))
+again, _ = humanize(hz_events, build_61(), Options(enabled=True, rate=40, seed=5))
+other, _ = humanize(hz_events, build_61(), Options(enabled=True, rate=40, seed=6))
+check("the same seed plays the same performance twice", first == again)
+check("a different seed plays a different one", first != other)
+loose = Options(enabled=True, rate=40, seed=5, repeatable=False)
+check("and unrepeatable means unrepeatable",
+      humanize(hz_events, build_61(), loose)[0]
+      != humanize(hz_events, build_61(), loose)[0])
+
+busy = humanize(hz_events, build_61(), Options(enabled=True, rate=BUSIEST_RATE,
+                                               seed=2))[1].mistakes
+rare = humanize(hz_events, build_61(), Options(enabled=True, rate=1000,
+                                               seed=2))[1].mistakes
+check("the rate dial actually governs how many", busy > rare * 4,
+      f"1 in {BUSIEST_RATE} -> {busy}, 1 in 1000 -> {rare}")
+
+# Independent rolls clump. The spacing rule is what stops a burst reading as a
+# broken program, and it caps how many can fit in a song of a given length.
+span = max(event.time for event in hz_events)
+check("mistakes cannot bunch up past the spacing rule",
+      busy <= span / REFRACTORY + 1, f"{busy} in {span:.1f}s")
+
+check("with no kind of mistake ticked it plays loose but never wrong",
+      humanize(hz_events, build_61(),
+               Options(enabled=True, rate=BUSIEST_RATE, slip=False, miss=False,
+                       brush=False, double=False))[1].mistakes == 0)
+
+# The test scale exists to show whether the modifier dwell is right. A
+# deliberate wrong key would make it unreadable.
+settings = PlayerSettings(**BASE)
+settings.humanize = Options(enabled=True, rate=BUSIEST_RATE, seed=1)
+kept, quiet = plan(test_pattern(build_61()), build_61(), settings)
+check("the diagnostics are exempt from all of it",
+      quiet.mistakes == 0 and quiet.loosened == 0
+      and kept == test_pattern(build_61()).events)
+
+check("looseness is capped at what a person could plausibly do",
+      MAX_TIMING_MS <= 50 and MAX_ROLL_MS <= 60,
+      f"timing {MAX_TIMING_MS}ms, roll {MAX_ROLL_MS}ms")
 
 print()
 print(f"{sum(results)}/{len(results)} passed")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import sys
 import time
 from datetime import datetime
@@ -60,6 +61,14 @@ from .backends import (
     soundfont_available,
 )
 from .config import LAYOUT_DIR, AppConfig
+from .humanize import (
+    BUSIEST_RATE,
+    DRIFTS,
+    MAX_LENGTH_MS,
+    MAX_ROLL_MS,
+    MAX_TIMING_MS,
+    QUIETEST_RATE,
+)
 from .layouts import (
     builtin_layouts,
     import_midiplusplus_config,
@@ -76,6 +85,7 @@ from .player import (
     PlayerSettings,
     coverage,
     out_of_range,
+    plan,
     range_test,
     suggest_transpose,
     test_pattern,
@@ -336,10 +346,19 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_timing_tab(), "Timing")
         tabs.addTab(self._build_tracks_tab(), "Tracks")
         tabs.addTab(self._build_input_tab(), "Input")
+        tabs.addTab(self._build_humanizer_tab(), "Humanizer")
         tabs.addTab(self._build_details_tab(), "Details")
         tabs.addTab(self._build_log_tab(), "Log")
         box.addWidget(tabs, 1)
         return panel
+
+    @staticmethod
+    def _explain(form, text: str) -> None:
+        """A line of plain English under the control it belongs to."""
+        label = QLabel(text)
+        label.setObjectName("Subtitle")
+        label.setWordWrap(True)
+        form.addRow("", label)
 
     @staticmethod
     def _rule() -> QFrame:
@@ -522,6 +541,12 @@ class MainWindow(QMainWindow):
             lambda v: setattr(self.player.settings, "modifier_dwell_ms", v)
         )
         form.addRow("Modifier dwell", self.dwell_spin)
+        self._explain(
+            form,
+            "Black keys are played by holding shift along with a white key. "
+            "This is how long shift is held down either side of it, so the "
+            "game is certain to notice shift was there."
+        )
 
         self.min_note_spin = QSpinBox()
         self.min_note_spin.setRange(0, 500)
@@ -535,6 +560,12 @@ class MainWindow(QMainWindow):
             lambda v: setattr(self.player.settings, "min_note_ms", v)
         )
         form.addRow("Minimum note", self.min_note_spin)
+        self._explain(
+            form,
+            "The shortest any key is ever held down. Notes written shorter "
+            "than this get stretched to it, because a tap much quicker than "
+            "this can pass by without the game seeing it at all."
+        )
 
         self.retrigger_spin = QSpinBox()
         self.retrigger_spin.setRange(0, 200)
@@ -548,6 +579,12 @@ class MainWindow(QMainWindow):
             lambda v: setattr(self.player.settings, "retrigger_gap_ms", v)
         )
         form.addRow("Retrigger gap", self.retrigger_spin)
+        self._explain(
+            form,
+            "When the same note is played twice in a row, the key has to come "
+            "back up before it goes down again. This is the pause in between. "
+            "Without it the game sees one long press instead of two notes."
+        )
 
         self.batch_spin = QSpinBox()
         self.batch_spin.setRange(0, 60)
@@ -561,6 +598,12 @@ class MainWindow(QMainWindow):
             lambda v: setattr(self.player.settings, "batch_window_ms", v)
         )
         form.addRow("Chord window", self.batch_spin)
+        self._explain(
+            form,
+            "Notes starting within this much of each other are treated as one "
+            "chord and pressed as a group, which lets them share a single "
+            "shift press instead of taking one each."
+        )
 
         self.max_held_spin = QSpinBox()
         self.max_held_spin.setRange(0, 30)
@@ -573,6 +616,12 @@ class MainWindow(QMainWindow):
             lambda v: setattr(self.player.settings, "max_held_keys", v)
         )
         form.addRow("Keys held at once", self.max_held_spin)
+        self._explain(
+            form,
+            "A ceiling on how many keys are held down together. Some pianos "
+            "ignore keys past a certain number, so if big chords come out "
+            "thin, capping this at 6 or 10 can help. Otherwise leave it."
+        )
         outer.addLayout(form)
         outer.addStretch(1)
         outer.addWidget(self._rule())
@@ -753,6 +802,196 @@ class MainWindow(QMainWindow):
         form.addRow(self._rule())
         form.addRow("", self._defaults_row(
             self._reset_input, "the backend, pedal and hotkeys"))
+        return page
+
+    def _build_humanizer_tab(self) -> QWidget:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+
+        blurb = QLabel(
+            "A real person never plays a piece exactly as it is written. They "
+            "land a fraction early or late, hold notes a little longer or "
+            "shorter, and every so often their finger lands on the wrong key "
+            "or misses one. This does the same. Leave it off and the song is "
+            "played exactly as the file says, which is how it has always been."
+        )
+        blurb.setObjectName("Subtitle")
+        blurb.setWordWrap(True)
+        outer.addWidget(blurb)
+
+        self.humanize_check = QCheckBox("Play like a person, not a machine")
+        self.humanize_check.setChecked(self.config.humanize)
+        self.humanize_check.toggled.connect(self._humanize_toggled)
+        outer.addWidget(self.humanize_check)
+
+        form = QFormLayout()
+        form.setSpacing(9)
+
+        # Two dials, because these are two different kinds of thing. Looseness
+        # is a size and touches every note; mistakes are rare events and need a
+        # how-often. One dial governing both cannot be set to a value that is
+        # right for either.
+        heading = QLabel("Looseness")
+        heading.setObjectName("SectionLabel")
+        form.addRow(heading)
+        self._explain(
+            form,
+            "How precisely it plays. These are sizes, not chances - they "
+            "touch every note, a little."
+        )
+
+        self.hz_timing_spin = QSpinBox()
+        self.hz_timing_spin.setRange(0, MAX_TIMING_MS)
+        self.hz_timing_spin.setValue(self.config.humanize_timing_ms)
+        self.hz_timing_spin.setSuffix(" ms")
+        self.hz_timing_spin.valueChanged.connect(
+            lambda v: self._humanize_changed("timing_ms", "humanize_timing_ms", v)
+        )
+        form.addRow("Off the beat by", self.hz_timing_spin)
+        self._explain(
+            form,
+            "How far ahead of or behind the written moment a note can land. "
+            "Nobody is exactly on time; at zero, every note is."
+        )
+
+        self.hz_length_spin = QSpinBox()
+        self.hz_length_spin.setRange(0, MAX_LENGTH_MS)
+        self.hz_length_spin.setValue(self.config.humanize_length_ms)
+        self.hz_length_spin.setSuffix(" ms")
+        self.hz_length_spin.valueChanged.connect(
+            lambda v: self._humanize_changed("length_ms", "humanize_length_ms", v)
+        )
+        form.addRow("Held for longer or shorter by", self.hz_length_spin)
+        self._explain(
+            form,
+            "The same idea for how long a key stays down, so some notes ring "
+            "on a little and others are clipped off early."
+        )
+
+        self.hz_roll_spin = QSpinBox()
+        self.hz_roll_spin.setRange(0, MAX_ROLL_MS)
+        self.hz_roll_spin.setValue(self.config.humanize_roll_ms)
+        self.hz_roll_spin.setSuffix(" ms")
+        self.hz_roll_spin.valueChanged.connect(
+            lambda v: self._humanize_changed("roll_ms", "humanize_roll_ms", v)
+        )
+        form.addRow("Chords spread over", self.hz_roll_spin)
+        self._explain(
+            form,
+            "When several notes are meant to sound together, five fingers "
+            "never quite land at the same instant. This spreads them, which is "
+            "the single most human-sounding thing on this tab."
+        )
+
+        self.hz_drift_combo = QComboBox()
+        for label in ("Neither, it stays even", "Rushing ahead", "Dragging behind"):
+            self.hz_drift_combo.addItem(label)
+        self.hz_drift_combo.setCurrentIndex(
+            DRIFTS.index(self.config.humanize_drift)
+            if self.config.humanize_drift in DRIFTS else 0
+        )
+        self.hz_drift_combo.currentIndexChanged.connect(self._humanize_drift_changed)
+        form.addRow("Leans towards", self.hz_drift_combo)
+        self._explain(
+            form,
+            "People are not evenly wrong. Most have a habit of pushing ahead "
+            "of the beat or sitting behind it, and this gives it one."
+        )
+
+        rule = self._rule()
+        form.addRow(rule)
+
+        heading = QLabel("Mistakes")
+        heading.setObjectName("SectionLabel")
+        form.addRow(heading)
+        self._explain(
+            form,
+            "How often it actually gets one wrong. Rare things, so this one "
+            "is a chance rather than a size."
+        )
+
+        self.hz_rate_spin = QSpinBox()
+        self.hz_rate_spin.setRange(BUSIEST_RATE, QUIETEST_RATE)
+        self.hz_rate_spin.setSingleStep(5)
+        self.hz_rate_spin.setPrefix("1 in ")
+        self.hz_rate_spin.setSuffix(" notes")
+        self.hz_rate_spin.setValue(self.config.humanize_rate)
+        self.hz_rate_spin.valueChanged.connect(
+            lambda v: self._humanize_changed("rate", "humanize_rate", v)
+        )
+        form.addRow("How often", self.hz_rate_spin)
+
+        self.humanize_note = QLabel("")
+        self.humanize_note.setObjectName("Subtitle")
+        self.humanize_note.setWordWrap(True)
+        form.addRow("", self.humanize_note)
+
+        self.hz_slip_check = QCheckBox("Hit the key next to the right one")
+        self.hz_slip_check.setToolTip(
+            "A slipped finger, so the note that sounds is a neighbour of the\n"
+            "one meant - close enough to sound like a mistake, not a glitch."
+        )
+        self.hz_miss_check = QCheckBox("Miss a note completely")
+        self.hz_miss_check.setToolTip("The key is never pressed, so nothing sounds.")
+        self.hz_brush_check = QCheckBox("Brush a nearby key on the way in")
+        self.hz_brush_check.setToolTip(
+            "A quick unwanted note just before the right one, the way a finger\n"
+            "catches its neighbour coming down."
+        )
+        self.hz_double_check = QCheckBox("Press the same key twice")
+        self.hz_double_check.setToolTip(
+            "The note is struck again partway through, as though the key\n"
+            "bounced under the finger."
+        )
+        for check, field_name, config_name in (
+            (self.hz_slip_check, "slip", "humanize_slip"),
+            (self.hz_miss_check, "miss", "humanize_miss"),
+            (self.hz_brush_check, "brush", "humanize_brush"),
+            (self.hz_double_check, "double", "humanize_double"),
+        ):
+            check.setChecked(getattr(self.config, config_name))
+            check.toggled.connect(
+                lambda v, f=field_name, c=config_name: self._humanize_changed(f, c, v)
+            )
+        form.addRow("Kinds allowed", self.hz_slip_check)
+        form.addRow("", self.hz_miss_check)
+        form.addRow("", self.hz_brush_check)
+        form.addRow("", self.hz_double_check)
+
+        form.addRow(self._rule())
+
+        repeat_row = QHBoxLayout()
+        self.hz_repeat_check = QCheckBox("The same mistakes every time")
+        self.hz_repeat_check.setToolTip(
+            "On, a song goes wrong in the same places on every play, the way a\n"
+            "player has the same weak spots. Off, it is different each time."
+        )
+        self.hz_repeat_check.setChecked(self.config.humanize_repeatable)
+        self.hz_repeat_check.toggled.connect(
+            lambda v: self._humanize_changed("repeatable", "humanize_repeatable", v)
+        )
+        repeat_row.addWidget(self.hz_repeat_check)
+        self.hz_reroll = QPushButton("Reroll")
+        self.hz_reroll.setToolTip("Keep the settings, but get a different set of mistakes.")
+        self.hz_reroll.clicked.connect(self._humanize_reroll)
+        repeat_row.addWidget(self.hz_reroll)
+        repeat_row.addStretch(1)
+        form.addRow("Repeatable", repeat_row)
+
+        outer.addLayout(form)
+        outer.addStretch(1)
+        outer.addWidget(self._rule())
+        outer.addLayout(self._defaults_row(
+            self._reset_humanize, "everything on this tab"))
+
+        self._humanize_widgets = [
+            self.hz_timing_spin, self.hz_length_spin, self.hz_roll_spin,
+            self.hz_drift_combo, self.hz_rate_spin, self.hz_slip_check,
+            self.hz_miss_check, self.hz_brush_check, self.hz_double_check,
+            self.hz_repeat_check, self.hz_reroll,
+        ]
+        self._push_humanize()
+        self._humanize_enable()
         return page
 
     def _build_details_tab(self) -> QWidget:
@@ -1149,6 +1388,102 @@ class MainWindow(QMainWindow):
         self.config.include_drums = checked
         if self.song is not None:
             self._load_path(self.song.path)
+
+    # -- the Humanizer -----------------------------------------------------
+
+    def _push_humanize(self) -> None:
+        """Copy the whole tab into the player's settings in one go."""
+        options = self.player.settings.humanize
+        options.enabled = self.config.humanize
+        options.timing_ms = self.config.humanize_timing_ms
+        options.length_ms = self.config.humanize_length_ms
+        options.roll_ms = self.config.humanize_roll_ms
+        options.drift = self.config.humanize_drift
+        options.rate = self.config.humanize_rate
+        options.slip = self.config.humanize_slip
+        options.miss = self.config.humanize_miss
+        options.brush = self.config.humanize_brush
+        options.double = self.config.humanize_double
+        options.repeatable = self.config.humanize_repeatable
+        options.seed = self.config.humanize_seed
+
+    def _humanize_enable(self) -> None:
+        on = self.humanize_check.isChecked()
+        for widget in self._humanize_widgets:
+            widget.setEnabled(on)
+        self._update_humanize_note()
+
+    def _humanize_changed(self, field_name: str, config_name: str, value) -> None:
+        setattr(self.config, config_name, value)
+        setattr(self.player.settings.humanize, field_name, value)
+        self._update_humanize_note()
+
+    def _humanize_drift_changed(self, index: int) -> None:
+        self._humanize_changed(
+            "drift", "humanize_drift", DRIFTS[max(0, min(index, len(DRIFTS) - 1))]
+        )
+
+    def _humanize_toggled(self, checked: bool) -> None:
+        self._humanize_changed("enabled", "humanize", checked)
+        self._humanize_enable()
+        self.log("info", "Humanizer on." if checked
+                 else "Humanizer off: playing exactly as written.")
+
+    def _humanize_reroll(self) -> None:
+        self._humanize_changed(
+            "seed", "humanize_seed", random.randrange(1, 1_000_000)
+        )
+        self.log("info", f"Humanizer: rerolled to {self.config.humanize_seed}.")
+
+    def _update_humanize_note(self) -> None:
+        """Say what these settings mean for the song that is actually open.
+
+        Worked out by running the real pass rather than by estimating from the
+        rate, so the number is the number - mistakes it could not place, like a
+        slip with no neighbouring key to slip onto, are already not counted.
+        """
+        if not self.config.humanize:
+            self.humanize_note.setText(
+                "Off. Every note lands exactly where the file puts it."
+            )
+            return
+        if self.song is None:
+            self.humanize_note.setText("Open a song and this says how many to expect.")
+            return
+        _, report = plan(self.song, self._current_layout(), self.player.settings)
+        if not self.player.settings.humanize.kinds():
+            self.humanize_note.setText(
+                "No kinds of mistake are ticked, so it will play loose but "
+                "never wrong."
+            )
+            return
+        self.humanize_note.setText(
+            f"About {report.mistakes} in this song, spread over "
+            f"{format_time(self.song.duration)}, and never two closer "
+            "together than a third of a second."
+        )
+
+    def _reset_humanize(self) -> None:
+        fresh = AppConfig()
+        self.humanize_check.setChecked(fresh.humanize)
+        self.hz_timing_spin.setValue(fresh.humanize_timing_ms)
+        self.hz_length_spin.setValue(fresh.humanize_length_ms)
+        self.hz_roll_spin.setValue(fresh.humanize_roll_ms)
+        self.hz_drift_combo.setCurrentIndex(DRIFTS.index(fresh.humanize_drift))
+        self.hz_rate_spin.setValue(fresh.humanize_rate)
+        self.hz_slip_check.setChecked(fresh.humanize_slip)
+        self.hz_miss_check.setChecked(fresh.humanize_miss)
+        self.hz_brush_check.setChecked(fresh.humanize_brush)
+        self.hz_double_check.setChecked(fresh.humanize_double)
+        self.hz_repeat_check.setChecked(fresh.humanize_repeatable)
+        self._humanize_changed("seed", "humanize_seed", fresh.humanize_seed)
+        self._humanize_enable()
+        self.log(
+            "info",
+            f"Humanizer back to defaults: off, {fresh.humanize_timing_ms}ms off "
+            f"the beat, chords over {fresh.humanize_roll_ms}ms, "
+            f"1 mistake in {fresh.humanize_rate} notes.",
+        )
 
     # -- restoring defaults ------------------------------------------------
     #
@@ -1599,6 +1934,7 @@ class MainWindow(QMainWindow):
                 parts.append(f"{total - playable} out of range, {action}")
         self.subtitle_label.setText("   ·   ".join(parts))
         self._update_fold_recommendation()
+        self._update_humanize_note()
 
     def _update_fold_recommendation(self) -> None:
         """Advise on the fold box from what this song actually overflows by.
@@ -1972,6 +2308,10 @@ class MainWindow(QMainWindow):
         self.config.max_held_keys = self.max_held_spin.value()
         self.config.start_delay = self.delay_spin.value()
         self.config.sustain_cutoff = self.cutoff_slider.value()
+        self.config.humanize_timing_ms = self.hz_timing_spin.value()
+        self.config.humanize_length_ms = self.hz_length_spin.value()
+        self.config.humanize_roll_ms = self.hz_roll_spin.value()
+        self.config.humanize_rate = self.hz_rate_spin.value()
         self.config.modifier_dwell_ms = self.dwell_spin.value()
         self.config.min_note_ms = self.min_note_spin.value()
         self.config.retrigger_gap_ms = self.retrigger_spin.value()

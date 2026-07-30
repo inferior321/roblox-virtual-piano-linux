@@ -43,6 +43,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from .humanize import Options, Report, humanize
 from .layouts import Layout, note_name
 
 IDLE = "idle"
@@ -74,6 +75,10 @@ class PlayerSettings:
     # everything: it produced an empty set, which read as "no filter".
     enabled_tracks: set | None = None
     enabled_channels: set | None = None
+
+    # Everything the Humanizer tab sets. Off by default, and off means the
+    # events are played exactly as the file wrote them.
+    humanize: Options = field(default_factory=Options)
 
 
 # A batch struck further behind its nominal time than this is worth counting.
@@ -115,6 +120,11 @@ class Player:
         self.settings = settings
         self.song = None
         self.stats = Stats()
+
+        # What is actually being played. The same list as the song's, unless
+        # the Humanizer has been over it - so every read of the event stream
+        # goes through here rather than through the song.
+        self._events = []
 
         self.on_state = lambda state: None
         self.on_progress = lambda position, held_notes: None
@@ -171,6 +181,7 @@ class Player:
     def load(self, song) -> None:
         self.stop()
         self.song = song
+        self._events = list(song.events) if song is not None else []
         self._position = 0.0
         self._index = 0
         self._sustain_index = 0
@@ -294,6 +305,10 @@ class Player:
             f"retrigger {self.settings.retrigger_gap_ms}ms",
         )
 
+        # Before the count-in, so the work lands in time nobody is listening
+        # to, and the Log says what was decided before a note of it is heard.
+        self._plan_events()
+
         if self.settings.start_delay > 0:
             self._set_state(COUNTING_IN)
             deadline = time.perf_counter() + self.settings.start_delay
@@ -325,10 +340,25 @@ class Player:
 
         self._finish()
 
+    def _plan_events(self) -> None:
+        """Settle what is actually going to be played, mistakes and all.
+
+        Rolled once per playback rather than per note, so the run is
+        repeatable, can be counted before it is heard, and a seek back through
+        a passage finds the same slip in the same place.
+        """
+        if self.song is None:
+            self._events = []
+            return
+        events, report = plan(self.song, self.layout, self.settings)
+        self._events = events
+        if report.mistakes or report.loosened:
+            self.on_log("info", report.summary())
+
     def _play_loop(self) -> None:
         self.stats.reset()
         self._count_remaining_offs()
-        events = self.song.events
+        events = self._events
         origin_wall = time.perf_counter()
         origin_song = self._position
         last_speed = max(0.05, self.settings.speed)
@@ -556,7 +586,7 @@ class Player:
         """
         counts = {}
         if self.song is not None:
-            events = self.song.events
+            events = self._events
             for index in range(self._index, len(events)):
                 event = events[index]
                 if not event.on:
@@ -755,7 +785,7 @@ class Player:
         # A song-time gap g takes g/speed of real time, so the gap worth
         # bridging grows with the speed the piece is being played at.
         horizon = struck_at + 2 * dwell * max(0.05, self.settings.speed)
-        events = self.song.events
+        events = self._events
         for index in range(self._index, len(events)):
             event = events[index]
             if event.time > horizon:
@@ -982,7 +1012,7 @@ class Player:
             return
         self._panic()
         self._position = target
-        events = self.song.events
+        events = self._events
         index = 0
         while index < len(events) and events[index].time < target:
             index += 1
@@ -1010,6 +1040,11 @@ class _SimpleEvent:
 
 class _SimpleSong:
     """A song built in memory. Same shape as a loaded one."""
+
+    # A diagnostic, so the Humanizer leaves it alone: the test scale exists to
+    # show whether the modifier dwell is right, and a deliberate wrong key
+    # would make that impossible to read.
+    diagnostic = True
 
     def __init__(self, events, title="Test pattern", details=""):
         self.events = sorted(events, key=lambda e: (e.time, e.on))
@@ -1072,6 +1107,29 @@ def range_test(layout: Layout) -> "_SimpleSong":
         f"{note_name(n)}  ->  {layout.notes[n].label()}" for n in notes
     )
     return _SimpleSong(events, "Extended range only", labels)
+
+
+def plan(song, layout: Layout, settings: PlayerSettings) -> tuple:
+    """What a song will actually be played as, and what the Humanizer did.
+
+    Always worked out from the file rather than from a previous run's events,
+    or pressing Play twice would layer one performance's mistakes on the next.
+    The GUI calls this as well, to say how many are coming before you commit to
+    hearing them.
+    """
+    events = list(song.events)
+    if getattr(song, "diagnostic", False):
+        return events, Report()
+    return humanize(
+        events,
+        layout,
+        settings.humanize,
+        batch_window_ms=settings.batch_window_ms,
+        retrigger_gap_ms=settings.retrigger_gap_ms,
+        transpose=settings.transpose,
+        enabled_tracks=settings.enabled_tracks,
+        enabled_channels=settings.enabled_channels,
+    )
 
 
 def _pitch_counts(song, enabled_tracks=None) -> tuple:

@@ -58,6 +58,22 @@ class AppConfig:
     retrigger_gap_ms: int = 4
     batch_window_ms: int = 8
 
+    # The Humanizer. Off by default, and off plays the file exactly as written.
+    # The numbers are what it uses once switched on, so ticking the box does
+    # something audible straight away rather than nothing at all.
+    humanize: bool = False
+    humanize_timing_ms: int = 18
+    humanize_length_ms: int = 12
+    humanize_roll_ms: int = 20
+    humanize_drift: str = "steady"
+    humanize_rate: int = 150
+    humanize_slip: bool = True
+    humanize_miss: bool = True
+    humanize_brush: bool = False
+    humanize_double: bool = False
+    humanize_repeatable: bool = True
+    humanize_seed: int = 1
+
     # Clock on the right of the seek bar: total length, or time remaining.
     show_remaining: bool = False
 

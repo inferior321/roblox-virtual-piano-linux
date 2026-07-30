@@ -109,4 +109,15 @@
 # the verified one - stopped being true at 1.4.0. The default pedal moves to
 # space with it, which is what that layout uses: a fresh install was otherwise
 # ticked for a pedal with no key behind it.
-__version__ = "1.11.0"
+#
+# 1.12.0 adds the Humanizer: a tab that plays the piece the way a person would
+# rather than the way it is written. Two kinds of thing, kept apart because one
+# dial cannot govern both - looseness is a size and touches every note, while a
+# mistake is a rare event and needs a chance. A wrong key is a wrong *key*, off
+# the layout's own row and within a few semitones, so it is a slipped finger
+# rather than a jump. The whole performance is rolled once from a seed before
+# the first note, so it can be counted before it is heard and repeats itself.
+#
+# Also: the Timing tab now says in plain words what each of its five numbers
+# does, rather than leaving that to the tooltips.
+__version__ = "1.12.0"
