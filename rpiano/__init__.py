@@ -97,4 +97,10 @@
 # transport reading as playing for ever, clock stopped and seek bar dead. The
 # swap opens it now, refuses if it will not open, and a backend that fails
 # mid-song ends the song rather than wedging the program.
-__version__ = "1.9.1"
+#
+# 1.10.0 adds a Restore defaults button to the Playback, Timing and Input tabs,
+# so a value changed on a hunch can be put back without knowing what it was.
+# AppConfig is where a default is written down, so a fresh one is the whole
+# answer. It leaves the soundfont and any custom key mapping alone: those cost
+# real work to choose again, and a stray click must not be able to lose them.
+__version__ = "1.10.0"

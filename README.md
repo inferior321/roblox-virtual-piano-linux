@@ -127,6 +127,16 @@ Note that a chord mixing white and black keys is unavoidably spread over a few
 tens of milliseconds — the white keys have to be struck before shift goes down.
 It sounds like a slight roll. That's inherent, not a bug.
 
+So experiment freely: **Restore defaults**, at the bottom of the Playback,
+Timing and Input tabs, puts that tab back where it started, and says in the Log
+what it set. There is nothing to write down before you try a value.
+
+It never touches your soundfont, your instrument or a custom key mapping —
+those cost real work to choose again, so no button can lose them. On the Input
+tab it does switch **Send keys via** back to uinput and set the sustain pedal
+to whatever the current layout wants; on Playback it returns to the 61-key
+layout, which refits the transpose if **Fit automatically** is ticked.
+
 ## The layouts
 
 **Roblox 61-key** is the standard virtual-piano layout, C2 to C7: white keys

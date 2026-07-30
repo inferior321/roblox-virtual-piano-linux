@@ -341,6 +341,26 @@ class MainWindow(QMainWindow):
         box.addWidget(tabs, 1)
         return panel
 
+    @staticmethod
+    def _rule() -> QFrame:
+        rule = QFrame()
+        rule.setObjectName("Rule")
+        rule.setFrameShape(QFrame.Shape.HLine)
+        return rule
+
+    def _defaults_row(self, handler, what: str) -> QHBoxLayout:
+        """The Restore defaults button that closes a settings tab."""
+        row = QHBoxLayout()
+        row.addStretch(1)
+        button = QPushButton("Restore defaults")
+        button.setToolTip(
+            f"Put {what} back to the values a fresh install has.\n"
+            "The Log says what they were, in case you want one of them back."
+        )
+        button.clicked.connect(handler)
+        row.addWidget(button)
+        return row
+
     def _build_playback_tab(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
@@ -467,6 +487,10 @@ class MainWindow(QMainWindow):
         self.opacity_slider.setValue(self.config.opacity)
         self.opacity_slider.valueChanged.connect(self._window_options_changed)
         form.addRow("Opacity", self.opacity_slider)
+
+        form.addRow(self._rule())
+        form.addRow("", self._defaults_row(
+            self._reset_playback, "everything on this tab"))
         return page
 
     def _build_timing_tab(self) -> QWidget:
@@ -551,6 +575,9 @@ class MainWindow(QMainWindow):
         form.addRow("Keys held at once", self.max_held_spin)
         outer.addLayout(form)
         outer.addStretch(1)
+        outer.addWidget(self._rule())
+        outer.addLayout(self._defaults_row(
+            self._reset_timing, "all five timing values"))
         return page
 
     def _build_tracks_tab(self) -> QWidget:
@@ -722,6 +749,10 @@ class MainWindow(QMainWindow):
         self.hotkeys_check.setChecked(self.config.hotkeys_enabled)
         self.hotkeys_check.toggled.connect(self._hotkeys_toggled)
         form.addRow("", self.hotkeys_check)
+
+        form.addRow(self._rule())
+        form.addRow("", self._defaults_row(
+            self._reset_input, "the backend, pedal and hotkeys"))
         return page
 
     def _build_details_tab(self) -> QWidget:
@@ -1118,6 +1149,84 @@ class MainWindow(QMainWindow):
         self.config.include_drums = checked
         if self.song is not None:
             self._load_path(self.song.path)
+
+    # -- restoring defaults ------------------------------------------------
+    #
+    # AppConfig() is the only place a default is written down, so a fresh one
+    # is the whole answer. Setting a widget is enough to apply it: the same
+    # signal a hand edit sends carries it to the player, and closeEvent saves
+    # the settings file out of the widgets. Nothing here touches the soundfont
+    # or a custom key mapping - those are choices that cost real work to make
+    # again, so a stray click must not be able to lose them.
+
+    def _reset_timing(self) -> None:
+        fresh = AppConfig()
+        for spin, value in (
+            (self.dwell_spin, fresh.modifier_dwell_ms),
+            (self.min_note_spin, fresh.min_note_ms),
+            (self.retrigger_spin, fresh.retrigger_gap_ms),
+            (self.batch_spin, fresh.batch_window_ms),
+            (self.max_held_spin, fresh.max_held_keys),
+        ):
+            spin.setValue(value)
+        self.log(
+            "info",
+            f"Timing back to defaults: dwell {fresh.modifier_dwell_ms}ms, "
+            f"floor {fresh.min_note_ms}ms, "
+            f"retrigger {fresh.retrigger_gap_ms}ms, "
+            f"chord window {fresh.batch_window_ms}ms, no key limit.",
+        )
+
+    def _reset_playback(self) -> None:
+        fresh = AppConfig()
+        index = self.layout_combo.findData(fresh.layout)
+        if index >= 0:
+            # Fires _layout_changed, which sets the pedal to suit the layout
+            # and, with a song open, refits the transpose.
+            self.layout_combo.setCurrentIndex(index)
+        self.auto_transpose_check.setChecked(fresh.auto_transpose)
+        self.transpose_spin.setValue(fresh.transpose)
+        self.speed_spin.setValue(fresh.speed)
+        self.hold_combo.setCurrentIndex(0 if fresh.hold_notes else 1)
+        self.tap_spin.setValue(fresh.tap_ms)
+        self.fold_check.setChecked(fresh.fold_out_of_range)
+        self.delay_spin.setValue(fresh.start_delay)
+        self.skip_spin.setValue(fresh.skip_seconds)
+        self.on_top_check.setChecked(fresh.always_on_top)
+        self.opacity_slider.setValue(fresh.opacity)
+        # A default transpose is not zero when a song is open and the box is
+        # ticked - it is the fit, which is what a fresh install would show.
+        # The layout may not have changed above, so this cannot be left to it.
+        if self.song is not None and self.auto_transpose_check.isChecked():
+            self._auto_transpose()
+        self.log(
+            "info",
+            f"Playback back to defaults: {self._current_layout().name}, "
+            f"speed {fresh.speed:g}x, count-in {fresh.start_delay:g}s, "
+            f"skip {fresh.skip_seconds}s, transpose "
+            f"{self.transpose_spin.value():+d}.",
+        )
+
+    def _reset_input(self) -> None:
+        fresh = AppConfig()
+        self.backend_combo.setCurrentText(fresh.backend)
+        self.volume_slider.setValue(fresh.preview_volume)
+        # The pedal has no one default: each layout has its own, and this is
+        # the rule switching layout applies, so it is the one that belongs here.
+        wants_pedal = self._current_layout().high > 96
+        self._set_sustain_widgets(" " if wants_pedal else "")
+        self.sustain_check.setChecked(wants_pedal)
+        self._sustain_changed()
+        self.cutoff_slider.setValue(fresh.sustain_cutoff)
+        self.hotkeys_check.setChecked(fresh.hotkeys_enabled)
+        self.log(
+            "info",
+            f"Input back to defaults: {self.backend_combo.currentText()}, "
+            f"pedal {'on' if wants_pedal else 'off'}, "
+            f"cutoff {fresh.sustain_cutoff}, volume {fresh.preview_volume}, "
+            f"hotkeys {'on' if fresh.hotkeys_enabled else 'off'}. "
+            "Your soundfont and key mapping are untouched.",
+        )
 
     # -- settings ----------------------------------------------------------
 

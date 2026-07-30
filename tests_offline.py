@@ -831,6 +831,65 @@ check("a backend failing mid-song ends the song instead of wedging the transport
 check("and says what went wrong", bool(errors), str(errors[:1]))
 player.stop()
 
+# ------------------------------------------------------ RESTORE DEFAULTS
+#
+# The buttons read every value out of a fresh AppConfig, so a field named
+# wrongly there is an AttributeError under the cursor of whoever clicks it and
+# nowhere else. Read as source rather than imported: the window needs PyQt6 and
+# a display, and building one starts a global hotkey listener, which a test
+# suite has no business doing to the machine it runs on.
+import ast
+from dataclasses import fields as dataclass_fields
+from pathlib import Path as _Path
+
+from rpiano.config import AppConfig
+
+_gui = ast.parse((_Path(__file__).parent / "rpiano" / "gui.py").read_text())
+_functions = {
+    node.name: node
+    for node in ast.walk(_gui)
+    if isinstance(node, ast.FunctionDef)
+}
+RESETS = ("_reset_timing", "_reset_playback", "_reset_input")
+TABS = {
+    "_build_timing_tab": "_reset_timing",
+    "_build_playback_tab": "_reset_playback",
+    "_build_input_tab": "_reset_input",
+}
+
+check("every tab that should have a Restore defaults button has one",
+      all(
+          any(
+              isinstance(node, ast.Attribute) and node.attr == "_defaults_row"
+              for node in ast.walk(_functions[tab])
+          )
+          for tab in TABS
+      ),
+      ", ".join(sorted(TABS)))
+
+known = {field.name for field in dataclass_fields(AppConfig)}
+restored = set()
+for name in RESETS:
+    restored |= {
+        node.attr
+        for node in ast.walk(_functions[name])
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "fresh"
+    }
+check("every default a Restore button reads is a real setting",
+      restored <= known, str(sorted(restored - known)) + " unknown")
+check("the timing values are among them",
+      {"modifier_dwell_ms", "min_note_ms", "retrigger_gap_ms",
+       "batch_window_ms", "max_held_keys"} <= restored)
+
+# The one decision worth pinning down: a stray click must not be able to lose a
+# soundfont, which costs a file dialogue and a full read to choose again.
+KEEP = {"soundfont_path", "soundfont_stamp", "soundfont_presets",
+        "soundfont_bank", "soundfont_program"}
+check("no Restore button clears the chosen soundfont",
+      not (restored & KEEP), str(sorted(restored & KEEP)))
+
 print()
 print(f"{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)
