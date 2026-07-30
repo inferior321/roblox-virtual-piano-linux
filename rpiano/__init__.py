@@ -83,4 +83,10 @@
 # 1.8.1 gives the retrigger gap one frame instead of one and a half. It and the
 # minimum note ask for the same thing - that a transition be caught by one poll
 # - and it was the only one of the three getting a different margin for it.
-__version__ = "1.8.1"
+#
+# 1.9.0 drops the fps presets and AUTO. Testing in the game showed the frame
+# rate did not predict how well the piano plays, so values derived from it were
+# answering a question that turned out not to matter. What is left is the five
+# numbers and a starting point found by trying them: 5ms dwell, 8ms minimum
+# note, 4ms retrigger.
+__version__ = "1.9.0"

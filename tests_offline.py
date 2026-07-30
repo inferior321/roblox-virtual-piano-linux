@@ -13,7 +13,6 @@ from rpiano.player import (
     PlayerSettings,
     coverage,
     out_of_range,
-    timing_analysis,
     suggest_transpose,
     test_pattern,
     range_test,
@@ -492,53 +491,6 @@ check("range test covers exactly the 27 extended notes",
 check("range test on a 61-key layout is empty",
       len(range_test(build_61()).events) == 0)
 
-# ------------------------------------------------------- TIMING ANALYSIS
-
-# C4 and C#4 are one physical key, shift apart. Two of them close together but
-# not overlapping put a ceiling on the minimum-note floor: hold the first past
-# the start of the second and they collide over a key that was never in short
-# supply in the music itself.
-near = FakeSong([
-    E(0.00, True, 60), E(0.02, False, 60),    # C4, 20ms long
-    E(0.05, True, 61), E(0.07, False, 61),    # C#4 starts 50ms after C4
-])
-found = timing_analysis(near, build_88(), 0)
-shared_ceiling = found["ceiling_ms"]
-check("the ceiling is the gap between two notes sharing a key",
-      found["ceiling_ms"] is not None and abs(found["ceiling_ms"] - 50) < 1.0,
-      f"{found['ceiling_ms']}")
-check("notes that do not overlap are not counted as clashes",
-      found["genuine"] == 0, str(found["genuine"]))
-
-# Written to overlap, so no floor can be blamed for it.
-overlap = FakeSong([
-    E(0.00, True, 60), E(0.30, False, 60),
-    E(0.10, True, 61), E(0.40, False, 61),
-])
-found = timing_analysis(overlap, build_88(), 0)
-check("an overlap written into the music counts as genuine",
-      found["genuine"] == 1, str(found["genuine"]))
-
-# Nothing sharing a key at all: no ceiling, so only the frame rate constrains.
-apart = FakeSong([
-    E(0.0, True, 60), E(0.2, False, 60),
-    E(0.5, True, 67), E(0.7, False, 67),
-])
-found = timing_analysis(apart, build_88(), 0)
-check("a song with no shared keys has no ceiling",
-      found["ceiling_ms"] is None, str(found["ceiling_ms"]))
-check("the tenth-percentile note length is reported",
-      found["tenth_ms"] is not None and abs(found["tenth_ms"] - 200) < 1.0,
-      str(found["tenth_ms"]))
-
-# The transpose changes which notes land on which key, so it changes the answer.
-# C4 and C#4 share key "t"; a semitone up they become C#4 and D4, which are
-# "shift+t" and "y" - different keys, so the collision disappears entirely.
-shifted = timing_analysis(near, build_88(), 1)
-check("transposing off a shared key removes the ceiling",
-      shifted["ceiling_ms"] is None,
-      f"ceiling {shifted['ceiling_ms']} at +1, was {shared_ceiling:.0f}ms at +0")
-
 # --------------------------------------------------- TRACK AND CHANNEL FILTERS
 
 # None means no filter; a set means exactly those. An empty set therefore means
@@ -735,18 +687,6 @@ check("every path that touches the synth is lock-guarded",
 # suite runs on a bare interpreter with no Qt at all.
 try:
     from rpiano.gui import MainWindow
-
-    # The game samples the keyboard once a frame. Minimum note and retrigger are
-    # the same requirement stated twice - a key seen down once, a key seen up
-    # once - so retrigger gets a frame, not the frame and a half it used to,
-    # which was the only one of the three asking differently for the same thing.
-    for fps, want in ((30, (50, 67, 33)), (60, (25, 33, 17)), (120, (12, 17, 8))):
-        check(f"frame margins at {fps} fps", MainWindow.frame_margins(fps) == want,
-              str(MainWindow.frame_margins(fps)))
-    dwell, note, retrigger = MainWindow.frame_margins(60)
-    check("retrigger is one frame, dwell is more",
-          retrigger < dwell and abs(retrigger - 1000 / 60) < 1.0,
-          f"retrigger {retrigger}ms against a {1000/60:.1f}ms frame")
 
     key = MainWindow._preset_key(0, 20)
     check("a preset key is a string, not a tuple",

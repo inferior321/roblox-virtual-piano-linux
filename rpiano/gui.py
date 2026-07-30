@@ -76,7 +76,6 @@ from .player import (
     PlayerSettings,
     coverage,
     out_of_range,
-    timing_analysis,
     range_test,
     suggest_transpose,
     test_pattern,
@@ -475,49 +474,14 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(page)
 
         blurb = QLabel(
-            "Roblox checks its input once per frame. These three values exist "
-            "because of that, and the right numbers depend on the frame rate "
-            "you actually get in game. If notes sound wrong, start here."
+            "The game can miss a key that goes down and up again too quickly, "
+            "so each of these holds something a little longer than the music "
+            "asks. They start tight. If notes go missing or sound wrong, raise "
+            "the one whose symptom matches."
         )
         blurb.setObjectName("Subtitle")
         blurb.setWordWrap(True)
         outer.addWidget(blurb)
-
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Presets for"))
-        for label, fps in (("30 fps", 30), ("60 fps", 60), ("120 fps", 120)):
-            button = QPushButton(label)
-            button.clicked.connect(lambda _, f=fps: self._apply_fps_preset(f))
-            preset_row.addWidget(button)
-        self.auto_button = QPushButton("AUTO")
-        self.auto_button.setCheckable(True)
-        self.auto_button.setChecked(self.config.auto_timing)
-        self.auto_button.setToolTip(
-            "Work the values out from each song as it loads.\n"
-            "Stays on until you press it again."
-        )
-        self.auto_button.toggled.connect(self._auto_toggled)
-        preset_row.addWidget(self.auto_button)
-        preset_row.addStretch(1)
-        outer.addLayout(preset_row)
-
-        fps_row = QHBoxLayout()
-        self.fps_spin = QSpinBox()
-        self.fps_spin.setRange(10, 360)
-        self.fps_spin.setValue(self.config.game_fps)
-        self.fps_spin.setSuffix(" fps")
-        self.fps_spin.setToolTip(
-            "The frame rate you actually get in game. AUTO can tell from a song\n"
-            "how much a tighter value would buy, but not what the game will\n"
-            "survive - that depends on this, and nothing here can measure it."
-        )
-        self.fps_spin.valueChanged.connect(self._fps_changed)
-        fps_row.addWidget(self.fps_spin)
-        self.auto_note = QLabel("")
-        self.auto_note.setObjectName("Subtitle")
-        self.auto_note.setWordWrap(True)
-        fps_row.addWidget(self.auto_note, 1)
-        outer.addLayout(fps_row)
 
         form = QFormLayout()
         form.setSpacing(9)
@@ -1245,110 +1209,6 @@ class MainWindow(QMainWindow):
         self.config.skip_seconds = value
         self._refresh_hotkey_labels()
 
-    # -- automatic timing --------------------------------------------------
-
-    def _auto_toggled(self, on: bool) -> None:
-        self.config.auto_timing = on
-        if on:
-            self._apply_auto_timing()
-        else:
-            self.auto_note.setText("")
-            self.log("info", "AUTO off; the timing values stay as they are.")
-
-    def _fps_changed(self, value: int) -> None:
-        self.config.game_fps = value
-        if self.config.auto_timing:
-            self._apply_auto_timing()
-
-    def _apply_auto_timing(self) -> None:
-        """Set the three timing values from the frame rate and this song.
-
-        The frame rate decides what the game can survive; only the song can say
-        how much a tighter value would buy. So the frame rate sets a floor that
-        is never crossed, and the song narrows things down from above.
-
-        Dwell is frame-derived alone, deliberately. How long a modifier has to
-        be held is a property of the game's input polling, not of the music -
-        there is nothing in a MIDI file that could justify a value for it.
-        """
-        fps = max(1, self.config.game_fps)
-        frame = 1000.0 / fps
-        dwell, _preset_note, retrigger = self.frame_margins(fps)
-
-        # A note has to outlast one frame poll to be seen at all: that is the
-        # hard floor. Two frames is the comfortable default, and the cap - but a
-        # song built from genuinely short notes should not be stretched to it.
-        floor = max(8, round(frame))
-        cap = frame * 2.0
-        reasons = []
-        if self.song is not None:
-            analysis = timing_analysis(
-                self.song, self._current_layout(),
-                self.player.settings.transpose,
-                self.player.settings.enabled_tracks,
-                self.player.settings.enabled_channels,
-            )
-            tenth = analysis["tenth_ms"]
-            ceiling = analysis["ceiling_ms"]
-            if tenth is not None and tenth < cap:
-                cap = tenth
-                reasons.append(f"notes get as short as {tenth:.0f}ms")
-            if ceiling is not None and ceiling < cap:
-                cap = ceiling
-                reasons.append(f"above {ceiling:.0f}ms the floor invents key clashes")
-            if ceiling is not None and ceiling < floor:
-                reasons.append(
-                    f"{ceiling:.0f}ms would be needed to avoid them all, which "
-                    f"is under one frame at {fps} fps"
-                )
-            if analysis["genuine"]:
-                reasons.append(f"{analysis['genuine']} clashes are in the music itself")
-        min_note = max(floor, int(cap))
-
-        for spin, value in ((self.dwell_spin, dwell),
-                            (self.min_note_spin, min_note),
-                            (self.retrigger_spin, retrigger)):
-            spin.setValue(value)
-        summary = f"AUTO at {fps} fps: dwell {dwell}ms, min note {min_note}ms, retrigger {retrigger}ms"
-        self.auto_note.setText(summary)
-        self.log("info", summary + ("   ·   " + "; ".join(reasons) if reasons else ""))
-
-    @staticmethod
-    def frame_margins(fps: int) -> tuple:
-        """(dwell, minimum note, retrigger) in ms for a frame rate.
-
-        The game samples the keyboard once a frame, so anything happening
-        entirely between two samples never happened. Each value buys visibility
-        against that.
-
-        Dwell gets a frame and a half. The modifier is read at the instant the
-        key press is handled and nothing says where in the frame that lands, so
-        it has to be held either side of the boundary.
-
-        Minimum note and retrigger are the same requirement stated twice - a key
-        seen down once, a key seen up once - so they get the same margin. Only
-        the note keeps a second frame, being the one whose failure is silence
-        rather than a repeat merging into one.
-        """
-        frame = 1000.0 / max(1, fps)
-        return (
-            max(4, round(frame * 1.5)),
-            max(8, round(frame * 2.0)),
-            max(4, round(frame)),
-        )
-
-    def _apply_fps_preset(self, fps: int) -> None:
-        # Choosing a fixed preset says plainly that AUTO should stop
-        # deciding, or it would silently overwrite this on the next song.
-        if self.config.auto_timing:
-            self.auto_button.setChecked(False)
-        dwell, min_note, retrigger = self.frame_margins(fps)
-        self.dwell_spin.setValue(dwell)
-        self.min_note_spin.setValue(min_note)
-        self.retrigger_spin.setValue(retrigger)
-        self.log("info", f"Timing set for {fps} fps "
-                         f"(frame is {1000.0 / max(1, fps):.1f}ms).")
-
     def _set_sustain_widgets(self, key: str) -> None:
         self.sustain_combo.blockSignals(True)
         self.sustain_custom.blockSignals(True)
@@ -1614,10 +1474,6 @@ class MainWindow(QMainWindow):
                 parts.append(f"{total - playable} out of range, {action}")
         self.subtitle_label.setText("   ·   ".join(parts))
         self._update_fold_recommendation()
-        # Which notes collide depends on the layout and the transpose, so
-        # the same events that change the range picture change this too.
-        if self.config.auto_timing:
-            self._apply_auto_timing()
 
     def _update_fold_recommendation(self) -> None:
         """Advise on the fold box from what this song actually overflows by.

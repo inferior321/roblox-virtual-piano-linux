@@ -2,17 +2,17 @@
 
 Timing model
 ------------
-Roblox is a frame-polled game, and that shapes everything here. Three
-consequences drive the timing settings, all of which are adjustable because
-the right values depend on the frame rate you're actually running at.
+The game can miss a key that goes down and up again too quickly. Three
+consequences follow, and each has a setting, all adjustable - the defaults are
+a starting point found by trying them, not a figure derived from anything.
 
 1. Modifier dwell. When the game handles a key-down it asks "is shift held
    right now?" rather than reading a shift state carried on the event. If
    shift goes down and back up between two frames, the game never sees it and
-   a sharp comes out as the natural below it. So shift is pressed, held across
-   at least one frame boundary, and only then released.
+   a sharp comes out as the natural below it. So shift is pressed, held for a
+   dwell, and only then released.
 
-2. Minimum note duration. A key pressed and released inside one frame can be
+2. Minimum note duration. A key pressed and released too quickly can be
    missed entirely. Every note is held for a floor duration regardless of how
    short it is in the MIDI, which is what rescues fast passages.
 
@@ -63,10 +63,10 @@ class PlayerSettings:
     sustain_key: str = ""
     sustain_cutoff: int = 64
 
-    # Timing, all in milliseconds. Defaults assume roughly 60fps.
-    modifier_dwell_ms: int = 20
-    min_note_ms: int = 35
-    retrigger_gap_ms: int = 20
+    # Timing, all in milliseconds.
+    modifier_dwell_ms: int = 5
+    min_note_ms: int = 8
+    retrigger_gap_ms: int = 4
     batch_window_ms: int = 8
 
     # None means no filter at all; a set means exactly those, and an empty set
@@ -1083,80 +1083,6 @@ def suggest_transpose(song, layout: Layout, enabled_tracks=None) -> tuple:
         if hits > best_hits or (hits == best_hits and abs(shift) < abs(best_shift)):
             best_shift, best_hits = shift, hits
     return best_shift, best_hits / total
-
-
-def timing_analysis(song, layout: Layout, transpose: int,
-                    enabled_tracks=None, enabled_channels=None) -> dict:
-    """What this song can tell us about the timing values it wants.
-
-    Two notes a semitone apart share one physical key - C4 and C#4 are the same
-    key with shift - so if both are sounding at once, one loses it. Some of
-    those collisions are written into the music and unavoidable. The rest are
-    manufactured by the minimum-note floor: a note held longer than the file
-    asks runs into the next use of its key.
-
-    The highest floor that manufactures none is simply the smallest gap between
-    two different notes on one key. Computed in a single pass rather than by
-    counting clashes at every candidate value, which on a dense file meant
-    ninety passes and nearly three seconds.
-
-    Returns the ceiling in ms, how many collisions are unavoidable, the tenth
-    percentile note length, and how many notes were examined.
-    """
-    spans = {}          # (track, channel, note) -> [start times awaiting an end]
-    by_key = {}         # physical key -> [(start, end, note)]
-    lengths = []
-    for event in song.events:
-        if enabled_tracks is not None and event.track not in enabled_tracks:
-            continue
-        if enabled_channels is not None and event.channel not in enabled_channels:
-            continue
-        voice = (event.track, event.channel, event.note)
-        if event.on:
-            spans.setdefault(voice, []).append(event.time)
-            continue
-        starts = spans.get(voice)
-        if not starts:
-            continue
-        start = starts.pop(0)
-        lengths.append(event.time - start)
-        target = event.note + transpose
-        stroke = layout.notes.get(target)
-        if stroke is None:
-            folded = layout.fold_into_range(target)
-            stroke = layout.notes.get(folded) if folded is not None else None
-        if stroke is not None:
-            by_key.setdefault(stroke.char, []).append(
-                (start, event.time, target)
-            )
-
-    ceiling = float("inf")
-    genuine = 0
-    for items in by_key.values():
-        items.sort()
-        for index, (start, end, note) in enumerate(items):
-            for other_start, _other_end, other_note in items[index + 1:]:
-                gap = other_start - start
-                # Two reasons to keep looking, and they stop at different
-                # points: a genuine overlap needs other_start inside this note,
-                # while the ceiling needs any gap smaller than the smallest so
-                # far. Breaking on the ceiling alone silently stopped counting
-                # overlaps that lay beyond it.
-                if other_start >= end and gap >= ceiling:
-                    break
-                if other_note == note:
-                    continue
-                if end > other_start:
-                    genuine += 1        # already overlapping as written
-                elif gap < ceiling:
-                    ceiling = gap       # the floor has to stay under this
-    lengths.sort()
-    return {
-        "ceiling_ms": None if ceiling == float("inf") else ceiling * 1000.0,
-        "genuine": genuine,
-        "tenth_ms": lengths[len(lengths) // 10] * 1000.0 if lengths else None,
-        "notes": len(lengths),
-    }
 
 
 def out_of_range(song, layout: Layout, transpose: int,
