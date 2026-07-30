@@ -620,6 +620,18 @@ check("changing instrument keeps the loaded soundfont",
       and swap.program == 4,
       f"synth kept {swap._synth is kept}, selected {swap._synth.selected}")
 
+# FluidSynth's own default is 64-frame periods, a render deadline every 1.45ms
+# at 44.1kHz. It is refused realtime priority on an ordinary desktop and the
+# player thread busy-waits on its own schedule, so that deadline gets missed -
+# and a missed deadline is an underrun, heard as buzzing. Pinned because the
+# symptom is subtle enough that the numbers could drift back unnoticed.
+deadline_ms = SoundfontBackend.PERIOD_SIZE / 44.1
+check("the audio render deadline has real slack in it",
+      deadline_ms >= 8.0, f"{deadline_ms:.2f}ms per period")
+check("the audio buffer is not so deep it lags behind",
+      SoundfontBackend.PERIOD_SIZE * SoundfontBackend.PERIODS / 44.1 <= 120.0,
+      f"{SoundfontBackend.PERIOD_SIZE * SoundfontBackend.PERIODS / 44.1:.0f}ms of buffer")
+
 # FluidSynth is a C library, so deleting a synth on the GUI thread while the
 # player thread is calling noteon on it segfaults rather than raising - a
 # soundfont change mid-song took the whole process down. Every path that reaches

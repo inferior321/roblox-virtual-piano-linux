@@ -63,4 +63,10 @@
 # C library: deleting a synth on the GUI thread while the player thread is
 # calling noteon on it is a use-after-free, and it segfaults rather than
 # raising. Every path to the synth is serialised now.
-__version__ = "1.7.4"
+#
+# 1.7.5 stops the preview buzzing. FluidSynth defaults to 64-frame periods - a
+# render deadline every 1.45ms - and is refused realtime priority while the
+# player thread busy-waits, so it missed the deadline and underran. It also
+# started the audio driver before reading the soundfont, leaving it with nothing
+# to render for the length of the load, which is the burst on a cold start.
+__version__ = "1.7.5"

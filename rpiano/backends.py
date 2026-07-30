@@ -421,6 +421,13 @@ class SoundfontBackend(Backend):
     name = "audio preview"
     description = "Plays the keystrokes through a soundfont instead of sending them."
 
+    # FluidSynth defaults to 64-frame periods: a render deadline every
+    # 1.45ms at 44.1kHz, which it misses on a desktop that denies it
+    # realtime priority while the player thread busy-waits. A missed
+    # deadline is an underrun, and an underrun is the buzzing.
+    PERIOD_SIZE = 512
+    PERIODS = 4
+
     def __init__(self, path: str = "", bank: int = 0, program: int = 0,
                  gain: float = 0.4):
         self.path = path
@@ -523,16 +530,30 @@ class SoundfontBackend(Backend):
 
         synth = fluidsynth.Synth(samplerate=44100.0)
         synth.setting("synth.gain", self.gain)
-        try:
-            synth.start()
-        except Exception as exc:
-            synth.delete()
-            raise BackendError(f"No audio output available: {exc}") from exc
+        # FluidSynth defaults to 64-frame periods, which at 44.1kHz is a render
+        # deadline every 1.45ms. It asks for realtime priority to meet that and
+        # is refused on an ordinary desktop, while the player thread busy-waits
+        # on its own schedule and holds the interpreter lock - so the deadline
+        # gets missed, and a missed deadline is an underrun, which is audible as
+        # buzzing. Bigger periods give it room. The added latency does not
+        # matter for something you listen to rather than perform on.
+        synth.setting("audio.period-size", self.PERIOD_SIZE)
+        synth.setting("audio.periods", self.PERIODS)
+
+        # Load before starting the driver. Started first, the driver is already
+        # pulling audio while a soundfont is read - tens of milliseconds of
+        # nothing to render, which is the burst of noise on a cold start and on
+        # every soundfont change.
         sfid = synth.sfload(str(self.path))
         if sfid == -1:
             synth.delete()
             raise BackendError(f"Could not load {Path(self.path).name}.")
         synth.program_select(0, sfid, self.bank, self.program)
+        try:
+            synth.start()
+        except Exception as exc:
+            synth.delete()
+            raise BackendError(f"No audio output available: {exc}") from exc
         self._synth, self._sfid = synth, sfid
 
     def close(self) -> None:
