@@ -491,6 +491,38 @@ check("range test covers exactly the 27 extended notes",
 check("range test on a 61-key layout is empty",
       len(range_test(build_61()).events) == 0)
 
+# --------------------------------------------------- TRACK AND CHANNEL FILTERS
+
+# None means no filter; a set means exactly those. An empty set therefore means
+# nothing at all - which is what "All off" produces, and it used to be read as
+# "no filter" and play the lot.
+mixed = FakeSong([
+    E(0.0, True, 60, track=0, channel=0), E(0.2, False, 60, track=0, channel=0),
+    E(0.4, True, 64, track=1, channel=1), E(0.6, False, 64, track=1, channel=1),
+])
+
+
+def struck_with(**settings):
+    backend, _errors, _player = run(mixed, PlayerSettings(**BASE, **settings))
+    return [what for kind, what in backend.kinds() if kind == "down"]
+
+
+check("no filter plays every track",
+      len(struck_with(enabled_tracks=None)) == 2,
+      str(struck_with(enabled_tracks=None)))
+check("an empty track set plays nothing",
+      struck_with(enabled_tracks=set()) == [],
+      str(struck_with(enabled_tracks=set())))
+check("a track set plays only those tracks",
+      len(struck_with(enabled_tracks={0})) == 1,
+      str(struck_with(enabled_tracks={0})))
+check("an empty channel set plays nothing",
+      struck_with(enabled_channels=set()) == [],
+      str(struck_with(enabled_channels=set())))
+check("a channel set plays only those channels",
+      len(struck_with(enabled_channels={1})) == 1,
+      str(struck_with(enabled_channels={1})))
+
 # ------------------------------------------------------- AUDIO PREVIEW
 
 # The preview backend reads keystrokes back through the layout, asking the same

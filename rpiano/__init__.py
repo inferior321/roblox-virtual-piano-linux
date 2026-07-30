@@ -69,4 +69,9 @@
 # player thread busy-waits, so it missed the deadline and underran. It also
 # started the audio driver before reading the soundfont, leaving it with nothing
 # to render for the length of the load, which is the burst on a cold start.
-__version__ = "1.7.5"
+#
+# 1.7.6 makes "All off" mean it. An empty set of enabled tracks was read as "no
+# filter" rather than "nothing", so unticking every part played the lot -
+# unticking every channel too. None is the absence of a filter now, and an empty
+# set is genuinely empty.
+__version__ = "1.7.6"

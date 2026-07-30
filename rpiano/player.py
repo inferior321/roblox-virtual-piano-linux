@@ -69,8 +69,11 @@ class PlayerSettings:
     retrigger_gap_ms: int = 20
     batch_window_ms: int = 8
 
-    enabled_tracks: set = field(default_factory=set)
-    enabled_channels: set = field(default_factory=set)  # empty means all
+    # None means no filter at all; a set means exactly those, and an empty set
+    # therefore means nothing. Conflating the two is what made "All off" play
+    # everything: it produced an empty set, which read as "no filter".
+    enabled_tracks: set | None = None
+    enabled_channels: set | None = None
 
 
 # A batch struck further behind its nominal time than this is worth counting.
@@ -539,10 +542,10 @@ class Player:
 
     def _event_enabled(self, event) -> bool:
         tracks = self.settings.enabled_tracks
-        if tracks and event.track not in tracks:
+        if tracks is not None and event.track not in tracks:
             return False
         channels = self.settings.enabled_channels
-        if channels and event.channel not in channels:
+        if channels is not None and event.channel not in channels:
             return False
         return True
 
@@ -1100,9 +1103,9 @@ def out_of_range(song, layout: Layout, transpose: int,
     for event in song.events:
         if not event.on:
             continue
-        if enabled_tracks and event.track not in enabled_tracks:
+        if enabled_tracks is not None and event.track not in enabled_tracks:
             continue
-        if enabled_channels and event.channel not in enabled_channels:
+        if enabled_channels is not None and event.channel not in enabled_channels:
             continue
         total += 1
         note = event.note + transpose

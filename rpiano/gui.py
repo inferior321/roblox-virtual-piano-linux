@@ -996,7 +996,7 @@ class MainWindow(QMainWindow):
         self.player.load(song)
         self._solo.clear()
         self.player.settings.enabled_tracks = {t.index for t in song.tracks if t.note_count}
-        self.player.settings.enabled_channels = set()
+        self.player.settings.enabled_channels = None
         self._populate_tracks()
         self._populate_channels()
 
@@ -1114,13 +1114,12 @@ class MainWindow(QMainWindow):
             self.channel_boxes.append(box)
 
     def _channels_changed(self, *_args) -> None:
-        enabled = {
+        # Exactly the ticked channels. Collapsing "all ticked" to an empty set
+        # used to stand in for "no filter", which meant unticking every channel
+        # produced the same empty set and played everything.
+        self.player.settings.enabled_channels = {
             box.property("channel") for box in self.channel_boxes if box.isChecked()
         }
-        # Empty means "everything", so only narrow when something is off.
-        if len(enabled) == len(self.channel_boxes):
-            enabled = set()
-        self.player.settings.enabled_channels = enabled
         self._update_subtitle()
 
     def _drums_changed(self, checked: bool) -> None:
@@ -1580,6 +1579,11 @@ class MainWindow(QMainWindow):
     def _play_builtin(self, song, subtitle: str) -> None:
         self.player.stop()
         self.song = None
+        # The test patterns are a single track of their own, so they must not
+        # inherit whatever selection the last real song left behind - with
+        # that song's tracks unticked, the test scale would play nothing.
+        self.player.settings.enabled_tracks = None
+        self.player.settings.enabled_channels = None
         self.player.load(song)
         self.title_label.setText(song.title)
         self.subtitle_label.setText(subtitle)
