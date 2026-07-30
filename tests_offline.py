@@ -620,6 +620,19 @@ check("changing instrument keeps the loaded soundfont",
       and swap.program == 4,
       f"synth kept {swap._synth is kept}, selected {swap._synth.selected}")
 
+# FluidSynth is a C library, so deleting a synth on the GUI thread while the
+# player thread is calling noteon on it segfaults rather than raising - a
+# soundfont change mid-song took the whole process down. Every path that reaches
+# the synth has to be serialised. Checked structurally, since the failure it
+# guards against is a core dump and cannot be asserted on from inside.
+unguarded = [
+    name for name in
+    ("open", "key_down", "key_up", "release_all", "set_gain", "set_soundfont")
+    if not hasattr(getattr(SoundfontBackend, name), "__wrapped__")
+]
+check("every path that touches the synth is lock-guarded",
+      not unguarded, f"unguarded: {unguarded}")
+
 # The instrument dropdown stores its bank and program as a string, because Qt's
 # findData compares through QVariant and will not match a Python tuple against a
 # stored one - it returned -1 and the box silently fell back to the first

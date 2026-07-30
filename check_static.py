@@ -86,11 +86,15 @@ for path in sorted(PACKAGE.glob("*.py")):
 
     # module-level name resolution, ignoring anything bound inside a scope
     class Scope(ast.NodeVisitor):
-        def __init__(self):
-            self.bound = set()
+        def __init__(self, enclosing=frozenset()):
+            # Names the function we are inside of can see. A nested function
+            # closes over them, and without carrying them down every captured
+            # name looked undefined - which made any decorator or inner helper
+            # unreportable noise.
+            self.enclosing = enclosing
 
         def visit_FunctionDef(self, fn):
-            local = set(globals_here)
+            local = set(globals_here) | set(self.enclosing)
             local |= {a.arg for a in fn.args.args + fn.args.kwonlyargs}
             if fn.args.vararg:
                 local.add(fn.args.vararg.arg)
@@ -115,7 +119,11 @@ for path in sorted(PACKAGE.glob("*.py")):
                             f"{path}:{sub.lineno}: name '{sub.id}' may be undefined "
                             f"(in {fn.name})"
                         )
-            self.generic_visit(fn)
+            # Recurse with this scope as the enclosing one, so a nested
+            # function is still checked on its own terms but can see what it
+            # legitimately closes over.
+            for sub in fn.body:
+                Scope(local).visit(sub)
 
     Scope().visit(tree)
 

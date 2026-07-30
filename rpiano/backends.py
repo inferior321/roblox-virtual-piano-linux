@@ -18,10 +18,12 @@ for checking that the rest of the program works.
 from __future__ import annotations
 
 import fcntl
+import functools
 import os
 import shutil
 import struct
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -345,6 +347,23 @@ class NullBackend(Backend):
 SOUNDFONT_MAGIC = b"RIFF"
 
 
+def _locked(method):
+    """Serialise a call that touches the synth.
+
+    FluidSynth is a C library. Deleting a synth on the GUI thread while the
+    player thread is calling noteon on it is a use-after-free, and it takes the
+    process down with a segfault rather than raising anything catchable - so
+    reconfiguring from the interface has to be held apart from the notes.
+    """
+
+    @functools.wraps(method)
+    def guarded(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return guarded
+
+
 def soundfont_available() -> tuple:
     """(ok, message) for whether audio preview can work at all."""
     try:
@@ -410,6 +429,7 @@ class SoundfontBackend(Backend):
         self.gain = gain
         self._synth = None
         self._sfid = None
+        self._lock = threading.RLock()   # see _locked
         self._reverse = {}          # (char, frozenset(mods)) -> note
         self._sustain_char = ""
         self._mods = set()
@@ -431,11 +451,13 @@ class SoundfontBackend(Backend):
         }
         self._sustain_char = sustain_key or ""
 
+    @_locked
     def set_gain(self, gain: float) -> None:
         self.gain = gain
         if self._synth is not None:
             self._synth.setting("synth.gain", gain)
 
+    @_locked
     def set_soundfont(self, path, bank: int, program: int) -> None:
         """Point at a different soundfont, or a different instrument in it.
 
@@ -483,6 +505,7 @@ class SoundfontBackend(Backend):
     def availability() -> tuple:
         return soundfont_available()
 
+    @_locked
     def open(self) -> None:
         # Kept alive across playbacks: the player opens and closes a backend
         # around every song, and reloading a soundfont each time would be a
@@ -525,6 +548,7 @@ class SoundfontBackend(Backend):
 
     # -- the keys ----------------------------------------------------------
 
+    @_locked
     def key_down(self, char: str) -> None:
         if self._synth is None:
             return
@@ -543,6 +567,7 @@ class SoundfontBackend(Backend):
         self._by_key[char] = note
         self._sustained.discard(note)
 
+    @_locked
     def key_up(self, char: str) -> None:
         if self._synth is None:
             return
@@ -567,6 +592,7 @@ class SoundfontBackend(Backend):
     def mods_up(self, mods) -> None:
         self._mods.difference_update(mods)
 
+    @_locked
     def release_all(self) -> None:
         if self._synth is None:
             return

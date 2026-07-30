@@ -58,4 +58,9 @@
 # tore the synth down for the next open(), but the player only opens a backend
 # at the start of a song - so the rest of that one played silently while the
 # keys carried on being pressed.
-__version__ = "1.7.3"
+#
+# 1.7.4 stops a soundfont change mid-song crashing the process. FluidSynth is a
+# C library: deleting a synth on the GUI thread while the player thread is
+# calling noteon on it is a use-after-free, and it segfaults rather than
+# raising. Every path to the synth is serialised now.
+__version__ = "1.7.4"
