@@ -35,4 +35,8 @@
 # rebuilding the folder tree around them - and bounds the scan, which 1.5.0
 # would have run over an entire home directory when a configured folder had
 # gone missing.
-__version__ = "1.5.1"
+#
+# 1.6.0 searches folder names too, under a FOLDERS heading above the songs.
+# A folder result opens where it sits and browses as deep as you like, filled
+# on demand rather than up front, and only the outermost match is listed.
+__version__ = "1.6.0"

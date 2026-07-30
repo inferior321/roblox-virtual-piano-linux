@@ -29,8 +29,6 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -43,6 +41,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTreeView,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
         # asked about a library that has not been scanned yet.
         self._library_root = Path.home()
         self._library_files = []
+        self._library_dirs = []
 
         settings = PlayerSettings(
             transpose=self.config.transpose,
@@ -227,9 +228,13 @@ class MainWindow(QMainWindow):
         self.tree.setHeaderHidden(True)
         self.tree.doubleClicked.connect(self._tree_activated)
 
-        self.results = QListWidget()
+        self.results = QTreeWidget()
+        self.results.setHeaderHidden(True)
         self.results.setItemDelegate(SearchResultDelegate(self.results))
-        self.results.setUniformItemSizes(True)
+        # Rows differ in height - a hit is two lines, a folder one - so uniform
+        # row heights must stay off or every row gets the tallest one's size.
+        self.results.setUniformRowHeights(False)
+        self.results.itemExpanded.connect(self._result_expanded)
         self.results.itemDoubleClicked.connect(self._result_activated)
 
         self.no_results = QLabel("")
@@ -729,7 +734,7 @@ class MainWindow(QMainWindow):
             self.config.midi_folder = str(folder)
 
         self._library_root = folder
-        self._library_files, partial = self._scan_library(folder)
+        self._library_files, self._library_dirs, partial = self._scan_library(folder)
         self.search_box.blockSignals(True)
         self.search_box.clear()
         self.search_box.blockSignals(False)
@@ -780,11 +785,13 @@ class MainWindow(QMainWindow):
         and are where the file counts run away.
         """
         found = []
+        subdirs = []
         started = time.perf_counter()
         partial = False
         for root, dirs, names in os.walk(folder, onerror=lambda _e: None):
             dirs[:] = [d for d in dirs if not d.startswith(".")]
             base = Path(root)
+            subdirs.extend(base / d for d in dirs)
             for name in names:
                 if name.lower().endswith((".mid", ".midi")):
                     found.append(base / name)
@@ -792,7 +799,7 @@ class MainWindow(QMainWindow):
                     or time.perf_counter() - started > self.SCAN_SECONDS):
                 partial = True
                 break
-        return sorted(found), partial
+        return sorted(found), sorted(subdirs), partial
 
     def _show_browse(self) -> None:
         self.library_stack.setCurrentWidget(self.tree)
@@ -809,39 +816,118 @@ class MainWindow(QMainWindow):
             self._show_browse()
             return
 
-        matches = [p for p in self._library_files if query in p.name.lower()]
-        if not matches:
+        folders = self._outermost(
+            [d for d in self._library_dirs if query in d.name.lower()]
+        )
+        files = [p for p in self._library_files if query in p.name.lower()]
+        if not folders and not files:
             self.no_results.setText(
-                f"No songs match “{text.strip()}”.\n\n"
+                f"Nothing matches “{text.strip()}”.\n\n"
                 "Clear the box to go back to browsing."
             )
             self.library_stack.setCurrentWidget(self.no_results)
-            self.library_hint.setText("0 of "
-                                      f"{len(self._library_files)} songs")
+            self.library_hint.setText("no matches")
             return
 
-        self._fill_results(matches)
+        self._fill_results(folders, files)
         self.library_stack.setCurrentWidget(self.results)
-        self.library_hint.setText(
-            f"{len(matches)} of {len(self._library_files)} songs"
-            "   ·   double-click to load"
+        counts = []
+        if folders:
+            counts.append(f"{len(folders)} folder" + ("s" if len(folders) > 1 else ""))
+        if files:
+            counts.append(f"{len(files)} of {len(self._library_files)} songs")
+        self.library_hint.setText("   ·   ".join(counts))
+
+    @staticmethod
+    def _outermost(folders):
+        """Drop any match that sits inside another match.
+
+        A broad query hits an ancestor and its descendants together - `a` finds
+        111 of this library's folders, 89 of them nested in another hit - and
+        listing all of them says the same thing many times over. The outermost
+        one is the useful row: the rest are reached by opening it.
+        """
+        chosen = set(folders)
+        return sorted(
+            f for f in folders
+            if not any(parent in chosen for parent in f.parents)
         )
 
-    def _fill_results(self, matches) -> None:
-        """One row per hit: the file name, and its folder beneath it."""
+    def _fill_results(self, folders, files) -> None:
+        """Matching folders to open, then matching songs, under labelled headers."""
         self.results.clear()
-        for path in matches:
-            folder = path.parent.relative_to(self._library_root).as_posix()
-            item = QListWidgetItem(path.name)
-            item.setData(Qt.ItemDataRole.UserRole, str(path))
-            item.setData(
-                SearchResultDelegate.PATH_ROLE,
-                "top level" if folder == "." else folder.replace("/", "  /  "),
-            )
-            self.results.addItem(item)
+        if folders:
+            self.results.addTopLevelItem(self._header_item("FOLDERS"))
+            for path in folders:
+                self.results.addTopLevelItem(self._folder_item(path))
+        if files:
+            self.results.addTopLevelItem(self._header_item("SONGS"))
+            for path in files:
+                self.results.addTopLevelItem(self._hit_item(path))
 
-    def _result_activated(self, item) -> None:
-        stored = item.data(Qt.ItemDataRole.UserRole)
+    @staticmethod
+    def _header_item(text: str) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([text])
+        item.setData(0, SearchResultDelegate.KIND_ROLE, SearchResultDelegate.HEADER)
+        # A label, not a row: nothing to select, nothing to activate.
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        return item
+
+    @staticmethod
+    def _folder_item(path: Path) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([path.name])
+        item.setData(0, Qt.ItemDataRole.UserRole, str(path))
+        item.setData(0, SearchResultDelegate.KIND_ROLE, SearchResultDelegate.FOLDER)
+        # Claim an arrow without reading the folder: contents are filled in when
+        # it is actually opened, so a hundred hits cost a hundred names, not a
+        # hundred directory listings.
+        item.setChildIndicatorPolicy(
+            QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator
+        )
+        return item
+
+    def _hit_item(self, path: Path) -> QTreeWidgetItem:
+        folder = path.parent.relative_to(self._library_root).as_posix()
+        item = QTreeWidgetItem([path.name])
+        item.setData(0, Qt.ItemDataRole.UserRole, str(path))
+        item.setData(0, SearchResultDelegate.KIND_ROLE, SearchResultDelegate.HIT)
+        item.setData(
+            0, SearchResultDelegate.PATH_ROLE,
+            "top level" if folder == "." else folder.replace("/", "  /  "),
+        )
+        return item
+
+    def _result_expanded(self, item) -> None:
+        """Fill a folder the first time it is opened."""
+        if item.childCount():
+            return
+        stored = item.data(0, Qt.ItemDataRole.UserRole)
+        if not stored:
+            return
+        try:
+            entries = sorted(
+                Path(stored).iterdir(),
+                key=lambda p: (p.is_file(), p.name.lower()),
+            )
+        except OSError:
+            return
+        for entry in entries:
+            if entry.is_dir():
+                if not entry.name.startswith("."):
+                    item.addChild(self._folder_item(entry))
+            elif entry.suffix.lower() in (".mid", ".midi"):
+                child = QTreeWidgetItem([entry.name])
+                child.setData(0, Qt.ItemDataRole.UserRole, str(entry))
+                child.setData(0, SearchResultDelegate.KIND_ROLE,
+                              SearchResultDelegate.PLAIN)
+                item.addChild(child)
+
+    def _result_activated(self, item, _column: int = 0) -> None:
+        kind = item.data(0, SearchResultDelegate.KIND_ROLE)
+        if kind == SearchResultDelegate.FOLDER:
+            item.setExpanded(not item.isExpanded())
+            return
+        stored = item.data(0, Qt.ItemDataRole.UserRole)
         if stored:
             self._load_path(Path(stored))
 

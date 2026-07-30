@@ -68,18 +68,30 @@ class ClickableLabel(QLabel):
 
 
 class SearchResultDelegate(QStyledItemDelegate):
-    """A search hit drawn as its file name, with the folder path beneath it.
+    """Draws the four kinds of row the search results hold.
 
-    Two lines rather than a folder tree: a flat list of hits is what you scan
-    when you already know the name, and the path underneath answers "which
-    one?" for the several files in a library that share a name.
+    HIT is a file the query matched: its name, and beneath it in smaller grey
+    text the folder holding it. That second line is what tells apart the
+    several files in a library that share a name.
 
-    The path is elided from the *left*, so the folder immediately holding the
-    file survives when the line is too long. That end is the one that tells
-    two matches apart.
+    FOLDER is a folder the query matched, and PLAIN is anything found by
+    opening one. Both are a single line - inside an opened folder the path is
+    already obvious from what you clicked to get there.
+
+    HEADER labels a section and is drawn, not selected.
+
+    A hit's path is elided from the *left*, so the folder immediately holding
+    the file survives a narrow panel. That end is the one that distinguishes
+    two matches; the top of the tree is the part they have in common.
     """
 
     PATH_ROLE = Qt.ItemDataRole.UserRole + 1
+    KIND_ROLE = Qt.ItemDataRole.UserRole + 2
+
+    HEADER = "header"
+    FOLDER = "folder"
+    HIT = "hit"
+    PLAIN = "plain"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -94,42 +106,60 @@ class SearchResultDelegate(QStyledItemDelegate):
         return small
 
     def sizeHint(self, option, index):
+        kind = index.data(self.KIND_ROLE)
         tall = QFontMetrics(option.font).height()
-        short = QFontMetrics(self._small(option.font)).height()
-        return QSize(option.rect.width(), tall + short + 8)
+        if kind == self.HIT:
+            short = QFontMetrics(self._small(option.font)).height()
+            return QSize(option.rect.width(), tall + short + 8)
+        if kind == self.HEADER:
+            return QSize(option.rect.width(), tall + 12)
+        return QSize(option.rect.width(), tall + 8)
 
     def paint(self, painter, option, index):
         painter.save()
         rect = option.rect
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, self._selected)
-
+        kind = index.data(self.KIND_ROLE)
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
         left = rect.left() + 7
         width = max(10, rect.width() - 14)
         metrics = QFontMetrics(option.font)
         small_font = self._small(option.font)
         small_metrics = QFontMetrics(small_font)
 
+        if kind == self.HEADER:
+            # A label, so no selection highlight and nothing to elide against.
+            painter.setFont(small_font)
+            painter.setPen(QPen(self._path))
+            painter.drawText(
+                QRectF(left, rect.top() + 6, width, small_metrics.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                text,
+            )
+            painter.restore()
+            return
+
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(rect, self._selected)
+
         painter.setFont(option.font)
         painter.setPen(QPen(self._name))
         painter.drawText(
             QRectF(left, rect.top() + 4, width, metrics.height()),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            metrics.elidedText(
-                index.data(Qt.ItemDataRole.DisplayRole) or "",
-                Qt.TextElideMode.ElideRight, width),
+            metrics.elidedText(text, Qt.TextElideMode.ElideRight, width),
         )
 
-        painter.setFont(small_font)
-        painter.setPen(QPen(self._path))
-        painter.drawText(
-            QRectF(left, rect.top() + 4 + metrics.height(),
-                   width, small_metrics.height()),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            small_metrics.elidedText(
-                index.data(self.PATH_ROLE) or "",
-                Qt.TextElideMode.ElideLeft, width),
-        )
+        if kind == self.HIT:
+            painter.setFont(small_font)
+            painter.setPen(QPen(self._path))
+            painter.drawText(
+                QRectF(left, rect.top() + 4 + metrics.height(),
+                       width, small_metrics.height()),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                small_metrics.elidedText(
+                    index.data(self.PATH_ROLE) or "",
+                    Qt.TextElideMode.ElideLeft, width),
+            )
         painter.restore()
 
 
