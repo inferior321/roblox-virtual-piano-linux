@@ -973,6 +973,74 @@ check("but never strikes twice a note too short to strike twice",
                Options(enabled=True, rate=BUSIEST_RATE, seed=11, slip=False,
                        miss=False, brush=False, double=True))[1].doubled == 0)
 
+
+def note_lengths(events) -> set:
+    """Every note's length in milliseconds, paired oldest-first."""
+    open_notes = {}
+    spans = set()
+    for event in events:
+        if event.on:
+            open_notes.setdefault(event.note, []).append(event.time)
+        elif open_notes.get(event.note):
+            spans.add(round((event.time - open_notes[event.note].pop(0)) * 1000))
+    return spans
+
+
+def only(kind, events, **over):
+    settings = dict(timing_ms=0, length_ms=0, roll_ms=0, slip=False, miss=False,
+                    brush=False, double=False)
+    settings.update(over)
+    chosen = Options(enabled=True, rate=BUSIEST_RATE, seed=3, **settings)
+    setattr(chosen, kind, True)
+    return chosen, humanize(events, build_61(), chosen, **{})
+
+
+def song_of(note_ms, count=200):
+    length = note_ms / 1000.0
+    out = []
+    for step in range(count):
+        pitch = 60 + (step % 12)
+        out.append(E(step * (length + 0.1), True, pitch))
+        out.append(E(step * (length + 0.1) + length, False, pitch))
+    return sorted(out, key=lambda e: (e.time, e.on))
+
+
+# A brushed key has to read as a blip against the note it is brushing past, on
+# quick music as well as slow. Held for a fixed span it was a fifth of a slow
+# note and half of a fast one, which is not a brush, it is a wrong note.
+for written in (400, 120, 60):
+    events = song_of(written)
+    _, (out, _) = only("brush", events)
+    extra = sorted(note_lengths(out) - {written})
+    check(f"a brush stays a blip against a {written}ms note",
+          bool(extra) and max(extra) <= written * 0.25,
+          f"{extra} ms, {max(extra) / written:.0%} of the note" if extra else "none")
+
+# The chord window says how far ahead a brush lands, since the batcher would
+# otherwise gather the two into a chord. It has nothing to say about how long a
+# finger rests on a key, and taking the length from it made a wide window
+# stretch the brush to nearly three times its size.
+narrow = humanize(song_of(400), build_61(),
+                  only("brush", song_of(400))[0], batch_window_ms=8)[0]
+wide = humanize(song_of(400), build_61(),
+                only("brush", song_of(400))[0], batch_window_ms=60)[0]
+check("and its length does not follow the chord window",
+      note_lengths(narrow) == note_lengths(wide),
+      f"{sorted(note_lengths(narrow) - {400})} vs {sorted(note_lengths(wide) - {400})}")
+
+# A key bouncing under the finger is a brief contact and then the note. Cut
+# down the middle it is not a bounce, it is a note played twice on purpose.
+_, (bounced, _) = only("double", song_of(400))
+pieces = sorted(note_lengths(bounced) - {400})
+check("a doubled key bounces rather than splitting the note in half",
+      bool(pieces) and max(pieces) > 300 and min(pieces) < 40,
+      f"contact {min(pieces)}ms, note {max(pieces)}ms" if pieces else "none")
+
+fresh_options = Options()
+check("all four kinds of mistake are on by default",
+      fresh_options.kinds() == ("slip", "miss", "brush", "double"),
+      str(fresh_options.kinds()))
+
 check("what comes out is still in order",
       played == sorted(played, key=lambda e: (e.time, e.on)))
 check("nothing is scheduled before the song starts",

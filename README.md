@@ -156,11 +156,19 @@ spreading them is the most human-sounding thing on the tab. *Leans towards*
 gives it a habit of rushing or dragging, because people are not evenly wrong.
 
 **Mistakes** are rare events, so they get a chance rather than a size: one note
-in however many you choose. Four kinds, each switched on or off — hitting the
-key next to the right one, missing a note completely, brushing a nearby key on
-the way in, and striking the same key twice. The line under the dial says how
-many that works out to for the song you have open, worked out by running the
-real thing rather than by estimating.
+in however many you choose. Four kinds, all on to begin with, each switched off
+on its own — hitting the key next to the right one, missing a note completely,
+brushing a nearby key on the way in, and a key bouncing so the same note is
+struck twice. The line under the dial says how many that works out to for the
+song you have open, worked out by running the real thing rather than by
+estimating.
+
+The last two are the ones that add a note rather than change or remove one, so
+what makes them read as an accident is that they are *brief*. A brush is held
+for a fraction of the note it is brushing past — about a tenth of a slow note
+and a fifth of a quick one — so it stays a blip whatever the tempo. A bounce is
+a contact of twenty-odd milliseconds and then the note proper, not a note cut
+into two halves, which is what a key actually does under a finger.
 
 A wrong key is a wrong *key*, not a wrong note: the candidates come off the
 layout's own key row, so what sounds is a slip of the finger rather than a jump.

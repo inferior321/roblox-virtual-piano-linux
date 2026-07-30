@@ -128,4 +128,12 @@
 # works the rest of the performance out again and carries on from the same
 # moment. The rest of the tab is locked while the music runs, since applying a
 # change drops every key that is down and that is no way to drag a spin box.
-__version__ = "1.12.1"
+#
+# 1.13.0 fixes the two mistakes that add a note instead of changing one, and
+# turns them on. What makes those read as an accident rather than a malfunction
+# is being brief, and neither was: a brush was held for a fixed span, so it was
+# a tenth of a slow note but half of a quick one, and it grew with the chord
+# window, which has nothing to say about fingers. A double cut the note into
+# two halves - a note played twice on purpose, not a key bouncing. It is a
+# contact of twenty-odd milliseconds and then the note now.
+__version__ = "1.13.0"

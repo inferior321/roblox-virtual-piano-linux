@@ -56,10 +56,27 @@ DRIFTS = ("steady", "rush", "drag")
 # program rather than a fallible player.
 REFRACTORY = 0.30
 
-# How far from the note it wanted a brushed key lands. Held clear of the chord
-# window, or the batcher gathers the two into a chord and the brush is not a
-# brush any more.
+# How far ahead of the note it wanted a brushed key lands. Held clear of the
+# chord window, or the batcher gathers the two into a chord and the brush is
+# not a brush any more. That is the only thing the window has to say about it -
+# how long the key is then held is a question about a finger, and taking it
+# from the window made a wide chord window lengthen the brush for no reason.
 BRUSH_LEAD = 0.045
+
+# And how long it is held: a share of the note it is brushing past, so it stays
+# a blip whether the music is slow or quick, floored so it is not lost under
+# the minimum-note setting and capped so it never grows into a note of its own.
+BRUSH_SHARE = 0.15
+BRUSH_MIN = 0.012
+BRUSH_MAX = 0.040
+
+# A key bouncing under the finger: brief contact, a gap, then the note proper.
+# Cut a note down the middle instead and it stops being a bounce and becomes a
+# note somebody played twice on purpose, which is a different mistake and a far
+# less convincing one. The rest is what has to be left over to be worth hearing.
+BOUNCE_MIN = 0.018
+BOUNCE_MAX = 0.035
+BOUNCE_REST = 0.045
 
 # A slip has to be next door on the keyboard AND no further than this in pitch.
 SLIP_SPAN = 4
@@ -85,8 +102,8 @@ class Options:
     rate: int = 150
     slip: bool = True
     miss: bool = True
-    brush: bool = False
-    double: bool = False
+    brush: bool = True
+    double: bool = True
 
     repeatable: bool = True
     seed: int = 1
@@ -338,24 +355,29 @@ def humanize(
                 continue
             elif mistake == "brush":
                 nearby = neighbours(layout, note + transpose)
-                if nearby:
+                against = length if length is not None else 0.2
+                held = min(max(against * BRUSH_SHARE, BRUSH_MIN), BRUSH_MAX)
+                at = start - brush_lead
+                # Nothing before the start of the song, and it has to be up and
+                # out of the way before the note it is brushing past arrives.
+                if nearby and at >= 0.0 and at + held < start:
                     brushed = rng.choice(nearby) - transpose
-                    at = max(0.0, start - brush_lead)
                     extra.append(_remake(event, at, brushed))
-                    extra.append(
-                        _remake(_flip(event), at + brush_lead * 0.6, brushed)
-                    )
+                    extra.append(_remake(_flip(event), at + held, brushed))
                     report.brushed += 1
                     last_mistake = event.time
                 else:
                     mistake = None
             elif mistake == "double":
-                # Room for a release, the gap the game needs to see a fresh
-                # press, and something left to hear afterwards.
-                if length is not None and length > gap * 2 + 0.06:
-                    cut = start + length * 0.45
-                    extra.append(_remake(_flip(event), cut, note))
-                    extra.append(_remake(event, cut + gap * 2, note))
+                bounce = rng.uniform(BOUNCE_MIN, BOUNCE_MAX)
+                # Room for the contact, the gap the game needs to see a fresh
+                # press, and enough of the note left afterwards to be the note.
+                if (length is not None
+                        and length > bounce + gap * 2 + BOUNCE_REST):
+                    extra.append(_remake(_flip(event), start + bounce, note))
+                    extra.append(
+                        _remake(event, start + bounce + gap * 2, note)
+                    )
                     report.doubled += 1
                     last_mistake = event.time
                 else:

@@ -69,8 +69,8 @@ class AppConfig:
     humanize_rate: int = 150
     humanize_slip: bool = True
     humanize_miss: bool = True
-    humanize_brush: bool = False
-    humanize_double: bool = False
+    humanize_brush: bool = True
+    humanize_double: bool = True
     humanize_repeatable: bool = True
     humanize_seed: int = 1
 
