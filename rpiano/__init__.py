@@ -74,4 +74,9 @@
 # filter" rather than "nothing", so unticking every part played the lot -
 # unticking every channel too. None is the absence of a filter now, and an empty
 # set is genuinely empty.
-__version__ = "1.7.6"
+#
+# 1.8.0 adds AUTO to the timing presets: the three values worked out from each
+# song as it loads, against a frame rate you declare. The minimum note is the
+# one the file can speak to - the highest floor that invents no key collisions -
+# and on most songs that is the preset value anyway, which it says.
+__version__ = "1.8.0"

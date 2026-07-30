@@ -43,6 +43,12 @@ class AppConfig:
     sustain_enabled: bool = True
     sustain_cutoff: int = 64
 
+    # What AUTO assumes about the game. It can work out from a song how much a
+    # tighter value would buy, but not what the game can survive - that depends
+    # on the frame rate, which nothing here can measure. So you say.
+    game_fps: int = 60
+    auto_timing: bool = False
+
     # Timing, milliseconds. Defaults assume roughly 60fps in game.
     modifier_dwell_ms: int = 20
     min_note_ms: int = 35

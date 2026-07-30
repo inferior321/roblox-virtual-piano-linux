@@ -76,6 +76,7 @@ from .player import (
     PlayerSettings,
     coverage,
     out_of_range,
+    timing_analysis,
     range_test,
     suggest_transpose,
     test_pattern,
@@ -488,8 +489,35 @@ class MainWindow(QMainWindow):
             button = QPushButton(label)
             button.clicked.connect(lambda _, f=fps: self._apply_fps_preset(f))
             preset_row.addWidget(button)
+        self.auto_button = QPushButton("AUTO")
+        self.auto_button.setCheckable(True)
+        self.auto_button.setChecked(self.config.auto_timing)
+        self.auto_button.setToolTip(
+            "Work the values out from each song as it loads.\n"
+            "Stays on until you press it again."
+        )
+        self.auto_button.toggled.connect(self._auto_toggled)
+        preset_row.addWidget(self.auto_button)
         preset_row.addStretch(1)
         outer.addLayout(preset_row)
+
+        fps_row = QHBoxLayout()
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setRange(10, 360)
+        self.fps_spin.setValue(self.config.game_fps)
+        self.fps_spin.setSuffix(" fps")
+        self.fps_spin.setToolTip(
+            "The frame rate you actually get in game. AUTO can tell from a song\n"
+            "how much a tighter value would buy, but not what the game will\n"
+            "survive - that depends on this, and nothing here can measure it."
+        )
+        self.fps_spin.valueChanged.connect(self._fps_changed)
+        fps_row.addWidget(self.fps_spin)
+        self.auto_note = QLabel("")
+        self.auto_note.setObjectName("Subtitle")
+        self.auto_note.setWordWrap(True)
+        fps_row.addWidget(self.auto_note, 1)
+        outer.addLayout(fps_row)
 
         form = QFormLayout()
         form.setSpacing(9)
@@ -1217,7 +1245,80 @@ class MainWindow(QMainWindow):
         self.config.skip_seconds = value
         self._refresh_hotkey_labels()
 
+    # -- automatic timing --------------------------------------------------
+
+    def _auto_toggled(self, on: bool) -> None:
+        self.config.auto_timing = on
+        if on:
+            self._apply_auto_timing()
+        else:
+            self.auto_note.setText("")
+            self.log("info", "AUTO off; the timing values stay as they are.")
+
+    def _fps_changed(self, value: int) -> None:
+        self.config.game_fps = value
+        if self.config.auto_timing:
+            self._apply_auto_timing()
+
+    def _apply_auto_timing(self) -> None:
+        """Set the three timing values from the frame rate and this song.
+
+        The frame rate decides what the game can survive; only the song can say
+        how much a tighter value would buy. So the frame rate sets a floor that
+        is never crossed, and the song narrows things down from above.
+
+        Dwell is frame-derived alone, deliberately. How long a modifier has to
+        be held is a property of the game's input polling, not of the music -
+        there is nothing in a MIDI file that could justify a value for it.
+        """
+        fps = max(1, self.config.game_fps)
+        frame = 1000.0 / fps
+        dwell = max(4, round(frame * 1.5))
+        retrigger = max(4, round(frame * 1.5))
+
+        # A note has to outlast one frame poll to be seen at all: that is the
+        # hard floor. Two frames is the comfortable default, and the cap - but a
+        # song built from genuinely short notes should not be stretched to it.
+        floor = max(8, round(frame))
+        cap = frame * 2.0
+        reasons = []
+        if self.song is not None:
+            analysis = timing_analysis(
+                self.song, self._current_layout(),
+                self.player.settings.transpose,
+                self.player.settings.enabled_tracks,
+                self.player.settings.enabled_channels,
+            )
+            tenth = analysis["tenth_ms"]
+            ceiling = analysis["ceiling_ms"]
+            if tenth is not None and tenth < cap:
+                cap = tenth
+                reasons.append(f"notes get as short as {tenth:.0f}ms")
+            if ceiling is not None and ceiling < cap:
+                cap = ceiling
+                reasons.append(f"above {ceiling:.0f}ms the floor invents key clashes")
+            if ceiling is not None and ceiling < floor:
+                reasons.append(
+                    f"{ceiling:.0f}ms would be needed to avoid them all, which "
+                    f"is under one frame at {fps} fps"
+                )
+            if analysis["genuine"]:
+                reasons.append(f"{analysis['genuine']} clashes are in the music itself")
+        min_note = max(floor, int(cap))
+
+        for spin, value in ((self.dwell_spin, dwell),
+                            (self.min_note_spin, min_note),
+                            (self.retrigger_spin, retrigger)):
+            spin.setValue(value)
+        summary = f"AUTO at {fps} fps: dwell {dwell}ms, min note {min_note}ms, retrigger {retrigger}ms"
+        self.auto_note.setText(summary)
+        self.log("info", summary + ("   ·   " + "; ".join(reasons) if reasons else ""))
+
     def _apply_fps_preset(self, fps: int) -> None:
+        # Choosing a fixed preset says plainly that AUTO should stop
+        # deciding, or it would silently overwrite this on the next song.
+        if self.config.auto_timing:
+            self.auto_button.setChecked(False)
         frame = 1000.0 / fps
         self.dwell_spin.setValue(max(4, round(frame * 1.5)))
         self.min_note_spin.setValue(max(8, round(frame * 2.0)))
@@ -1489,6 +1590,10 @@ class MainWindow(QMainWindow):
                 parts.append(f"{total - playable} out of range, {action}")
         self.subtitle_label.setText("   ·   ".join(parts))
         self._update_fold_recommendation()
+        # Which notes collide depends on the layout and the transpose, so
+        # the same events that change the range picture change this too.
+        if self.config.auto_timing:
+            self._apply_auto_timing()
 
     def _update_fold_recommendation(self) -> None:
         """Advise on the fold box from what this song actually overflows by.

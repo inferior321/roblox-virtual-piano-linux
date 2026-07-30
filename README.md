@@ -119,6 +119,25 @@ The defaults assume roughly 60 fps. If you run at 30, use the **30 fps** preset
 button, which is more forgiving. Higher frame rates let you tighten everything
 for snappier playback.
 
+**AUTO** works the three values out from each song as it loads, and stays on
+until you press it again. Tell it the frame rate you actually get in the box
+beside it: a song can say how much a tighter value would buy, but only the frame
+rate says what the game will survive, and nothing here can measure that.
+
+What it adapts is the minimum note. Two notes a semitone apart share one
+physical key, so holding a note longer than the file asks can run it into the
+next use of that key — a collision the music never contained. AUTO finds the
+highest floor that invents none of those and takes it, never going under one
+frame, and never stretching notes past the tenth-shortest in the song. On most
+files that lands exactly on the fps preset, and it says so. Where a song needs
+something tighter, the Log explains what it chose and why. Where the two
+constraints genuinely conflict — the file wanting less than a frame — it keeps
+the frame and tells you the collisions are unavoidable at that frame rate.
+
+Dwell comes from the frame rate alone. How long a modifier must be held is a
+property of the game's polling, not of the music, so there is nothing in a MIDI
+file that could justify a value for it.
+
 **Chord window** groups notes that start close together so a chord costs one
 shift press instead of one per note.
 
