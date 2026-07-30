@@ -43,6 +43,30 @@ WHITE_INDEX = {note: index for index, note in enumerate(WHITE_NOTES)}
 MIDDLE_C_INDEX = WHITE_INDEX.get(60)
 
 
+class WrappedLabel(QLabel):
+    """A word-wrapped label that gets the height its text actually needs.
+
+    A layout asks a widget how tall it wants to be before the widget knows how
+    wide it is going to end up, and a QLabel answers for a single line. Inside
+    a form, where the width is settled by the column rather than by the text,
+    that answer stops being true the moment the text wraps - and the last line
+    is cut off, worse the narrower the window. Answering again once the width
+    is known is the whole fix.
+    """
+
+    def __init__(self, text: str = "") -> None:
+        super().__init__(text)
+        self.setWordWrap(True)
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self.setMinimumHeight(self.heightForWidth(self.width()))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.setMinimumHeight(self.heightForWidth(self.width()))
+
+
 class ClickableLabel(QLabel):
     """A label that reports clicks, for a readout that doubles as a switch.
 

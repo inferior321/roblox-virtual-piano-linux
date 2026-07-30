@@ -92,6 +92,7 @@ from .player import (
 )
 from .widgets import (
     ClickableLabel,
+    WrappedLabel,
     KeyboardStrip,
     MappingEditor,
     SearchResultDelegate,
@@ -355,9 +356,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _explain(form, text: str) -> None:
         """A line of plain English under the control it belongs to."""
-        label = QLabel(text)
+        label = WrappedLabel(text)
         label.setObjectName("Subtitle")
-        label.setWordWrap(True)
         form.addRow("", label)
 
     @staticmethod
@@ -390,9 +390,8 @@ class MainWindow(QMainWindow):
         self.layout_combo.currentIndexChanged.connect(self._layout_changed)
         form.addRow("Piano layout", self.layout_combo)
 
-        self.layout_note = QLabel("")
+        self.layout_note = WrappedLabel("")
         self.layout_note.setObjectName("Subtitle")
-        self.layout_note.setWordWrap(True)
         form.addRow("", self.layout_note)
 
         transpose_row = QHBoxLayout()
@@ -465,9 +464,8 @@ class MainWindow(QMainWindow):
         self.fold_check.toggled.connect(self._fold_changed)
         form.addRow("Out of range", self.fold_check)
 
-        self.fold_note = QLabel("")
+        self.fold_note = WrappedLabel("")
         self.fold_note.setObjectName("Subtitle")
-        self.fold_note.setWordWrap(True)
         form.addRow("", self.fold_note)
         # _update_subtitle drives this from here on, but it bails out with no
         # song loaded, so the label needs its opening line set here.
@@ -688,9 +686,8 @@ class MainWindow(QMainWindow):
         self.backend_combo.currentTextChanged.connect(self._backend_changed)
         form.addRow("Send keys via", self.backend_combo)
 
-        self.backend_note = QLabel("")
+        self.backend_note = WrappedLabel("")
         self.backend_note.setObjectName("Subtitle")
-        self.backend_note.setWordWrap(True)
         form.addRow("", self.backend_note)
 
         sf_row = QHBoxLayout()
@@ -707,9 +704,8 @@ class MainWindow(QMainWindow):
         sf_row.addWidget(self.preset_combo, 1)
         form.addRow("Soundfont", sf_row)
 
-        self.soundfont_note = QLabel("")
+        self.soundfont_note = WrappedLabel("")
         self.soundfont_note.setObjectName("Subtitle")
-        self.soundfont_note.setWordWrap(True)
         form.addRow("", self.soundfont_note)
 
         volume_row = QHBoxLayout()
@@ -819,7 +815,12 @@ class MainWindow(QMainWindow):
         blurb.setWordWrap(True)
         outer.addWidget(blurb)
 
-        self.humanize_check = QCheckBox("Play like a person, not a machine")
+        self.humanize_check = QCheckBox("Play with the looseness and mistakes below")
+        self.humanize_check.setToolTip(
+            "Off, the song is played exactly as the file writes it.\n"
+            "This box can be ticked while a song is playing and takes effect\n"
+            "from that moment; the rest wait until it is paused or stopped."
+        )
         self.humanize_check.setChecked(self.config.humanize)
         self.humanize_check.toggled.connect(self._humanize_toggled)
         outer.addWidget(self.humanize_check)
@@ -921,9 +922,8 @@ class MainWindow(QMainWindow):
         )
         form.addRow("How often", self.hz_rate_spin)
 
-        self.humanize_note = QLabel("")
+        self.humanize_note = WrappedLabel("")
         self.humanize_note.setObjectName("Subtitle")
-        self.humanize_note.setWordWrap(True)
         form.addRow("", self.humanize_note)
 
         self.hz_slip_check = QCheckBox("Hit the key next to the right one")

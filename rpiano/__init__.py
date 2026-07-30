@@ -136,4 +136,11 @@
 # window, which has nothing to say about fingers. A double cut the note into
 # two halves - a note played twice on purpose, not a key bouncing. It is a
 # contact of twenty-odd milliseconds and then the note now.
-__version__ = "1.13.0"
+#
+# 1.13.1 renames the Humanizer's tick box to say what it does rather than to
+# make a point of it, and gives the explanations under each control the height
+# their text needs. A layout asks how tall a widget wants to be before it knows
+# how wide it will be, and a QLabel answers for one line - so in a form, where
+# the width comes from the column, every explanation that wrapped lost its last
+# line, and lost more of it the narrower the window.
+__version__ = "1.13.1"

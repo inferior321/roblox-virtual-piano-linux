@@ -70,7 +70,7 @@ INHERITED_OK = {
     "accept", "reject", "exec", "setLayout", "style", "parent", "window",
     "setObjectName", "setWordWrap", "setText", "text", "setEnabled",
     "setWindowFlag", "setWindowOpacity", "windowFlags", "statusBar",
-    "setCursor", "setToolTip",
+    "setCursor", "setToolTip", "heightForWidth",
 }
 
 for path in sorted(PACKAGE.glob("*.py")):
