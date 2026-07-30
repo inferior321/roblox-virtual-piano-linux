@@ -1431,11 +1431,17 @@ class MainWindow(QMainWindow):
             backend.configure(
                 self._current_layout(), self.player.settings.sustain_key
             )
-            backend.set_soundfont(
-                self.config.soundfont_path,
-                self.config.soundfont_bank,
-                self.config.soundfont_program,
-            )
+            try:
+                # Reopens on the spot if a song is already playing, so this can
+                # fail the way opening a backend can.
+                backend.set_soundfont(
+                    self.config.soundfont_path,
+                    self.config.soundfont_bank,
+                    self.config.soundfont_program,
+                )
+            except BackendError as exc:
+                self.log("error", f"Audio preview: {exc}")
+                return
             backend.set_gain(self._preview_gain())
 
     def _backend_changed(self, name: str) -> None:

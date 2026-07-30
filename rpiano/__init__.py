@@ -53,4 +53,9 @@
 # QVariant and will not match a Python tuple against a stored one, so looking
 # up the saved bank and program returned -1 every time and the dropdown fell
 # back to the first entry - a saved choice of anything else never reappeared.
-__version__ = "1.7.2"
+#
+# 1.7.3 keeps the sound going when the soundfont is changed mid-song. Swapping
+# tore the synth down for the next open(), but the player only opens a backend
+# at the start of a song - so the rest of that one played silently while the
+# keys carried on being pressed.
+__version__ = "1.7.3"

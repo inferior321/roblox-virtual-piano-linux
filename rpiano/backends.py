@@ -450,9 +450,16 @@ class SoundfontBackend(Backend):
         """
         path = str(path or "")
         if path != self.path:
+            was_open = self._synth is not None
             self.path = path
             self.bank, self.program = bank, program
             self._teardown()
+            if was_open:
+                # A song is already playing. The player only opens a backend at
+                # the start of one, so tearing the synth down and waiting for
+                # the next open() would leave the rest of this song silent while
+                # the keys carried on being pressed.
+                self.open()
             return
         self.bank, self.program = bank, program
         if self._synth is not None and self._sfid is not None:

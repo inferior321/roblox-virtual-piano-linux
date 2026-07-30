@@ -567,12 +567,37 @@ check("without the pedal a released key damps at once",
 # running, and open() short-circuits on an existing synth - so the synth must
 # be discarded or the previous file would go on playing.
 swap = SoundfontBackend(path="/one.sf2", bank=0, program=0)
-swap._synth = StubSynth()
-swap._sfid = 1
 swap.set_soundfont("/two.sf2", 0, 0)
 check("choosing another soundfont drops the loaded one",
       swap.path == "/two.sf2" and swap._synth is None,
       f"path {swap.path}, synth {swap._synth}")
+
+# ...but if a song is already playing there is nobody left to reopen it. The
+# player only opens a backend at the start of a song, so without reopening here
+# the rest of that song went silent while the keys carried on being pressed.
+reopened = []
+
+
+class ReopeningBackend(SoundfontBackend):
+    def open(self):
+        reopened.append(self.path)
+        self._synth = StubSynth()
+        self._sfid = 1
+
+
+live = ReopeningBackend(path="/one.sf2", bank=0, program=0)
+live.open()
+reopened.clear()
+live.set_soundfont("/two.sf2", 0, 0)
+check("swapping mid-song reopens instead of going silent",
+      reopened == ["/two.sf2"] and live._synth is not None,
+      f"reopened {reopened}, synth {live._synth is not None}")
+
+idle = ReopeningBackend(path="/one.sf2", bank=0, program=0)
+reopened.clear()
+idle.set_soundfont("/two.sf2", 0, 0)
+check("swapping while stopped does not open anything early",
+      reopened == [] and idle._synth is None, f"reopened {reopened}")
 
 # Changing instrument inside the same file must not throw the synth away: on a
 # large soundfont that would be a needless reload.
