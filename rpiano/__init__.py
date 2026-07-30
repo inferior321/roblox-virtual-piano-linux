@@ -143,4 +143,11 @@
 # how wide it will be, and a QLabel answers for one line - so in a form, where
 # the width comes from the column, every explanation that wrapped lost its last
 # line, and lost more of it the narrower the window.
-__version__ = "1.13.1"
+#
+# 1.13.2 stops a tall tab moving the window. A tab widget takes its minimum
+# height from whichever page is showing, so opening the Humanizer - the tallest
+# page by a long way - raised the window's minimum above its actual height and
+# Qt grew the window to fit, leaving the window manager to find room for it.
+# Every page sits in a scroll area now, so none of them asks the window for
+# anything: the minimum height is the same on all seven and does not move.
+__version__ = "1.13.2"

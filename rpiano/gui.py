@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -343,15 +344,39 @@ class MainWindow(QMainWindow):
         box.addWidget(self.keyboard)
 
         tabs = QTabWidget()
-        tabs.addTab(self._build_playback_tab(), "Playback")
-        tabs.addTab(self._build_timing_tab(), "Timing")
-        tabs.addTab(self._build_tracks_tab(), "Tracks")
-        tabs.addTab(self._build_input_tab(), "Input")
-        tabs.addTab(self._build_humanizer_tab(), "Humanizer")
-        tabs.addTab(self._build_details_tab(), "Details")
-        tabs.addTab(self._build_log_tab(), "Log")
+        for page, name in (
+            (self._build_playback_tab(), "Playback"),
+            (self._build_timing_tab(), "Timing"),
+            (self._build_tracks_tab(), "Tracks"),
+            (self._build_input_tab(), "Input"),
+            (self._build_humanizer_tab(), "Humanizer"),
+            (self._build_details_tab(), "Details"),
+            (self._build_log_tab(), "Log"),
+        ):
+            tabs.addTab(self._scrolled(page), name)
         box.addWidget(tabs, 1)
         return panel
+
+    @staticmethod
+    def _scrolled(page: QWidget) -> QScrollArea:
+        """A tab page that can be taller than the window without shoving it.
+
+        A tab widget takes its minimum height from whichever page is showing,
+        and a page taller than that minimum makes the window grow to fit it -
+        which the window manager then has to find room for, so opening a tall
+        tab could pick the whole window up and move it across the screen.
+        Inside a scroll area a page asks the window for nothing, and whatever
+        does not fit scrolls instead.
+        """
+        area = QScrollArea()
+        area.setWidget(page)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        # The page paints its own background; a viewport painting one over the
+        # top of it would sit a lighter panel inside the tab.
+        area.viewport().setAutoFillBackground(False)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return area
 
     @staticmethod
     def _explain(form, text: str) -> None:
