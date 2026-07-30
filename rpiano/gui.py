@@ -1350,21 +1350,42 @@ class MainWindow(QMainWindow):
         self._refresh_soundfont_state()
         self._configure_preview()
 
+    @staticmethod
+    def _preset_key(bank, program) -> str:
+        """Item data as a string.
+
+        Not the (bank, program) tuple it wants to be: findData compares through
+        QVariant, which does not match a Python tuple against a stored one, so
+        looking up the saved instrument silently returned -1 and the dropdown
+        fell back to the first entry. A string compares.
+        """
+        return f"{int(bank)}:{int(program)}"
+
     def _reload_presets(self) -> None:
         self.preset_combo.blockSignals(True)
         self.preset_combo.clear()
         for bank, program, name in self.config.soundfont_presets:
-            self.preset_combo.addItem(f"{name}", (bank, program))
+            self.preset_combo.addItem(name, self._preset_key(bank, program))
         index = self.preset_combo.findData(
-            (self.config.soundfont_bank, self.config.soundfont_program)
+            self._preset_key(self.config.soundfont_bank,
+                             self.config.soundfont_program)
         )
         self.preset_combo.setCurrentIndex(max(0, index))
         self.preset_combo.blockSignals(False)
+        # If the saved instrument is not in this soundfont, the box has fallen
+        # back to the first entry - so bring the config with it rather than
+        # leaving the setting pointing at something the display disagrees with.
+        current = self.preset_combo.currentData()
+        if current:
+            bank, program = (int(part) for part in current.split(":"))
+            self.config.soundfont_bank = bank
+            self.config.soundfont_program = program
 
     def _preset_changed(self, _index: int) -> None:
-        chosen = self.preset_combo.currentData()
-        if not chosen:
+        current = self.preset_combo.currentData()
+        if not current:
             return
+        chosen = tuple(int(part) for part in current.split(":"))
         self.config.soundfont_bank, self.config.soundfont_program = chosen
         backend = self.player.backend
         if isinstance(backend, SoundfontBackend):

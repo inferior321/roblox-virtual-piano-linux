@@ -595,6 +595,25 @@ check("changing instrument keeps the loaded soundfont",
       and swap.program == 4,
       f"synth kept {swap._synth is kept}, selected {swap._synth.selected}")
 
+# The instrument dropdown stores its bank and program as a string, because Qt's
+# findData compares through QVariant and will not match a Python tuple against a
+# stored one - it returned -1 and the box silently fell back to the first
+# instrument, so a saved choice never came back. Only the key format is checked
+# here; the lookup itself needs a widget, which this suite deliberately avoids.
+#
+# Guarded because importing the window pulls in PyQt6, and the rest of this
+# suite runs on a bare interpreter with no Qt at all.
+try:
+    from rpiano.gui import MainWindow
+
+    key = MainWindow._preset_key(0, 20)
+    check("a preset key is a string, not a tuple",
+          isinstance(key, str) and key == "0:20", repr(key))
+    check("a preset key round-trips to its bank and program",
+          tuple(int(part) for part in key.split(":")) == (0, 20))
+except ImportError:
+    print("SKIP  preset-key checks (PyQt6 not installed)")
+
 # ------------------------------------------------------ MALFORMED FILES
 
 # A single data byte over 127 makes a whole file unreadable, because the parser

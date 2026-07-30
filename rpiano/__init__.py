@@ -48,4 +48,9 @@
 # instrument dropdown always repopulated, but the backend kept the previous
 # file - open() short-circuits on an existing synth, so choosing a new
 # soundfont went on playing the old one.
-__version__ = "1.7.1"
+#
+# 1.7.2 brings back the instrument you chose. Qt's findData compares through
+# QVariant and will not match a Python tuple against a stored one, so looking
+# up the saved bank and program returned -1 every time and the dropdown fell
+# back to the first entry - a saved choice of anything else never reappeared.
+__version__ = "1.7.2"
