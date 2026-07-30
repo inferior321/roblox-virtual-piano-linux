@@ -89,4 +89,12 @@
 # answering a question that turned out not to matter. What is left is the five
 # numbers and a starting point found by trying them: 5ms dwell, 8ms minimum
 # note, 4ms retrigger.
-__version__ = "1.9.0"
+#
+# 1.9.1 makes changing backend mid-song work. A backend is opened at the start
+# of a song, so one swapped in during one was never opened at all: switching to
+# the audio preview left it showing keys in silence, and switching to uinput
+# raised on its first key and took the player thread with it - which left the
+# transport reading as playing for ever, clock stopped and seek bar dead. The
+# swap opens it now, refuses if it will not open, and a backend that fails
+# mid-song ends the song rather than wedging the program.
+__version__ = "1.9.1"

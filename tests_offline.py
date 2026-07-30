@@ -6,7 +6,7 @@ Run with:  ./venv/bin/python tests_offline.py
 import time
 from dataclasses import dataclass
 
-from rpiano.backends import Backend
+from rpiano.backends import Backend, BackendError
 from rpiano.layouts import build_61, build_88, note_name
 from rpiano.player import (
     Player,
@@ -744,6 +744,92 @@ try:
     os.unlink(broken)
 except ImportError:
     print("SKIP  malformed-file checks (mido not installed)")
+
+# ------------------------------------------------ SWAPPING BACKEND MID-SONG
+
+class OpenCounting(TimedBackend):
+    """A backend that insists on being opened before it will take a key."""
+
+    name = "counts opens"
+
+    def __init__(self, opens=True):
+        super().__init__()
+        self.opens, self.opened = opens, 0
+
+    def open(self):
+        if not self.opens:
+            raise BackendError("no audio device")
+        self.opened += 1
+
+    def key_down(self, char):
+        if not self.opened:
+            raise BackendError("Backend is not open.")
+        super().key_down(char)
+
+
+def playing_player():
+    """A player a second into a long song, so a swap lands mid-playback."""
+    song = FakeSong([E(i * 0.02, i % 2 == 0, 60 + (i % 12)) for i in range(600)])
+    first = TimedBackend()
+    player = Player(first, build_61(), PlayerSettings(**BASE))
+    player.load(song)
+    player.play()
+    deadline = time.time() + 5
+    while player.position < 0.3 and time.time() < deadline:
+        time.sleep(0.005)
+    return player, first
+
+
+player, first = playing_player()
+second = OpenCounting()
+player.set_backend(second)
+time.sleep(0.3)
+struck = [k for k in second.kinds() if k[0] == "down"]
+check("a backend swapped in mid-song is opened, so it actually plays",
+      second.opened == 1 and bool(struck),
+      f"opened {second.opened}x, {len(struck)} keys struck")
+check("the swap does not stop the song",
+      player.state == "playing", player.state)
+player.stop()
+
+player, first = playing_player()
+refused = OpenCounting(opens=False)
+try:
+    player.set_backend(refused)
+    raised = False
+except BackendError:
+    raised = True
+before = player.position
+time.sleep(0.3)
+check("a backend that will not open is refused rather than swapped in",
+      raised and player.backend is first, f"backend is {player.backend.name}")
+check("the old backend carries on playing after a refused swap",
+      player.state == "playing" and player.position > before,
+      f"{player.state}, {before:.2f} -> {player.position:.2f}")
+player.stop()
+
+
+class BreaksOnKey(TimedBackend):
+    name = "breaks"
+
+    def key_down(self, char):
+        raise BackendError("Backend is not open.")
+
+
+# A backend failing mid-song used to kill the player thread outright, leaving
+# the transport reading as playing for ever: the clock stopped and the seek bar
+# did nothing, because it is that thread which applies a seek.
+player, first = playing_player()
+errors = []
+player.on_error = errors.append
+player.set_backend(BreaksOnKey())
+deadline = time.time() + 5
+while player.state != "idle" and time.time() < deadline:
+    time.sleep(0.01)
+check("a backend failing mid-song ends the song instead of wedging the transport",
+      player.state == "idle", player.state)
+check("and says what went wrong", bool(errors), str(errors[:1]))
+player.stop()
 
 print()
 print(f"{sum(results)}/{len(results)} passed")

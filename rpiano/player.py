@@ -182,15 +182,25 @@ class Player:
             self.layout = layout
 
     def set_backend(self, backend) -> None:
+        # A backend is opened at the start of a song, so one swapped in during
+        # one would never be opened at all: the audio preview would go on
+        # showing keys in silence, and uinput would raise on its first key.
+        # Open it before taking the lock - reading a soundfont takes long
+        # enough that the player thread would audibly stall waiting for it -
+        # and if it will not open, leave the old one in place and playing.
+        if self._state in (COUNTING_IN, PLAYING, PAUSED):
+            backend.open()
         with self._lock:
             self._panic()
             old = self.backend
             self.backend = backend
-            if old is not None:
-                try:
-                    old.close()
-                except Exception:
-                    pass
+        # The keys were released above, while the backend holding them down
+        # was still the current one.
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
 
     # -- transport ---------------------------------------------------------
 
@@ -301,6 +311,21 @@ class Player:
             return
 
         self._set_state(PLAYING)
+        try:
+            self._play_loop()
+        except Exception as exc:
+            # A backend can fail in the middle of a song - most reliably by
+            # being swapped for one that could not be opened. Uncaught, the
+            # thread dies here with the transport still reading as playing:
+            # the clock stops and the seek bar does nothing, because it is
+            # this thread that applies a seek. Ending the song properly
+            # leaves the program usable and says what happened.
+            self.on_error(str(exc))
+            self.on_log("error", str(exc))
+
+        self._finish()
+
+    def _play_loop(self) -> None:
         self.stats.reset()
         self._count_remaining_offs()
         events = self.song.events
@@ -371,8 +396,6 @@ class Player:
             else:
                 while time.perf_counter() < target and not self._should_stop:
                     pass
-
-        self._finish()
 
     def _finish(self) -> None:
         with self._lock:

@@ -1408,9 +1408,15 @@ class MainWindow(QMainWindow):
             # Configured but no longer usable: fall back rather than fail later.
             self.backend_combo.setCurrentText("uinput")
 
-    def _configure_preview(self) -> None:
-        """Give the preview backend the mapping it reads keystrokes through."""
-        backend = self.player.backend
+    def _configure_preview(self, backend=None) -> None:
+        """Give the preview backend the mapping it reads keystrokes through.
+
+        Takes a backend so one can be set up before it is handed to the
+        player, which has to open it if a song is already playing - and an
+        unconfigured preview backend has no soundfont to open.
+        """
+        if backend is None:
+            backend = self.player.backend
         if isinstance(backend, SoundfontBackend):
             backend.configure(
                 self._current_layout(), self.player.settings.sustain_key
@@ -1430,12 +1436,22 @@ class MainWindow(QMainWindow):
 
     def _backend_changed(self, name: str) -> None:
         try:
-            self.player.set_backend(make_backend(name))
+            backend = make_backend(name)
+            # Configured before the handover, not after: mid-song the player
+            # opens what it is given, and a preview backend with no soundfont
+            # set on it yet cannot open.
+            self._configure_preview(backend)
+            self.player.set_backend(backend)
         except BackendError as exc:
             QMessageBox.warning(self, "Backend", str(exc))
+            # The old backend is still the one playing, so put the box back to
+            # agree with it rather than naming one that was never adopted.
+            self.backend_combo.blockSignals(True)
+            self.backend_combo.setCurrentText(self.config.backend)
+            self.backend_combo.blockSignals(False)
+            self._refresh_backend_status()
             return
         self.config.backend = name
-        self._configure_preview()
         self._refresh_backend_status()
         self.log("info", f"Backend: {name}")
 
