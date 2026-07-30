@@ -563,6 +563,38 @@ check("without the pedal a released key damps at once",
       preview._synth.events == [("on", 64), ("off", 64)],
       str(preview._synth.events))
 
+# Choosing a different soundfont has to reach a backend that is already
+# running, and open() short-circuits on an existing synth - so the synth must
+# be discarded or the previous file would go on playing.
+swap = SoundfontBackend(path="/one.sf2", bank=0, program=0)
+swap._synth = StubSynth()
+swap._sfid = 1
+swap.set_soundfont("/two.sf2", 0, 0)
+check("choosing another soundfont drops the loaded one",
+      swap.path == "/two.sf2" and swap._synth is None,
+      f"path {swap.path}, synth {swap._synth}")
+
+# Changing instrument inside the same file must not throw the synth away: on a
+# large soundfont that would be a needless reload.
+class ProgramSynth(StubSynth):
+    def __init__(self):
+        super().__init__()
+        self.selected = None
+
+    def program_select(self, _chan, _sfid, bank, program):
+        self.selected = (bank, program)
+
+
+swap = SoundfontBackend(path="/one.sf2", bank=0, program=0)
+swap._synth = ProgramSynth()
+swap._sfid = 1
+kept = swap._synth
+swap.set_soundfont("/one.sf2", 0, 4)
+check("changing instrument keeps the loaded soundfont",
+      swap._synth is kept and swap._synth.selected == (0, 4)
+      and swap.program == 4,
+      f"synth kept {swap._synth is kept}, selected {swap._synth.selected}")
+
 # ------------------------------------------------------ MALFORMED FILES
 
 # A single data byte over 127 makes a whole file unreadable, because the parser

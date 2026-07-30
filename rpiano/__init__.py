@@ -43,4 +43,9 @@
 # 1.7.0 adds an audio-preview backend: the keystrokes are read back through the
 # layout and played through a soundfont of your own, so a mapping can be heard
 # before the game is involved. Nothing is bundled and nothing reaches Roblox.
-__version__ = "1.7.0"
+#
+# 1.7.1 makes a soundfont change reach a preview that is already running. The
+# instrument dropdown always repopulated, but the backend kept the previous
+# file - open() short-circuits on an existing synth, so choosing a new
+# soundfont went on playing the old one.
+__version__ = "1.7.1"

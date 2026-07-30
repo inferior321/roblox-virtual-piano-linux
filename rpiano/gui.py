@@ -1348,6 +1348,7 @@ class MainWindow(QMainWindow):
                          f"{len(presets)} instruments.")
         self._reload_presets()
         self._refresh_soundfont_state()
+        self._configure_preview()
 
     def _reload_presets(self) -> None:
         self.preset_combo.blockSignals(True)
@@ -1367,8 +1368,9 @@ class MainWindow(QMainWindow):
         self.config.soundfont_bank, self.config.soundfont_program = chosen
         backend = self.player.backend
         if isinstance(backend, SoundfontBackend):
-            backend.bank, backend.program = chosen
-            # Only takes effect next time it opens, which is the next song.
+            backend.set_soundfont(
+                self.config.soundfont_path, *chosen
+            )
             self.log("info", f"Preview instrument: {self.preset_combo.currentText()}")
 
     def _volume_changed(self, value: int) -> None:
@@ -1408,9 +1410,11 @@ class MainWindow(QMainWindow):
             backend.configure(
                 self._current_layout(), self.player.settings.sustain_key
             )
-            backend.path = self.config.soundfont_path
-            backend.bank = self.config.soundfont_bank
-            backend.program = self.config.soundfont_program
+            backend.set_soundfont(
+                self.config.soundfont_path,
+                self.config.soundfont_bank,
+                self.config.soundfont_program,
+            )
             backend.set_gain(self._preview_gain())
 
     def _backend_changed(self, name: str) -> None:

@@ -436,6 +436,40 @@ class SoundfontBackend(Backend):
         if self._synth is not None:
             self._synth.setting("synth.gain", gain)
 
+    def set_soundfont(self, path, bank: int, program: int) -> None:
+        """Point at a different soundfont, or a different instrument in it.
+
+        A new file has to be reloaded, so any synth already holding the old one
+        is torn down and the next open() reads the new one - open() otherwise
+        short-circuits on an existing synth and would go on playing the file
+        that was chosen before.
+
+        Changing instrument within the same file is just a program change, and
+        deliberately not a reload: rebuilding the synth to move from one piano
+        to another would mean reading a large soundfont again for nothing.
+        """
+        path = str(path or "")
+        if path != self.path:
+            self.path = path
+            self.bank, self.program = bank, program
+            self._teardown()
+            return
+        self.bank, self.program = bank, program
+        if self._synth is not None and self._sfid is not None:
+            self._synth.program_select(0, self._sfid, bank, program)
+
+    def _teardown(self) -> None:
+        if self._synth is not None:
+            try:
+                self._synth.delete()
+            except Exception:
+                pass
+        self._synth = None
+        self._sfid = None
+        self._by_key.clear()
+        self._sustained.clear()
+        self._pedal = False
+
     # -- lifecycle ---------------------------------------------------------
 
     @staticmethod
