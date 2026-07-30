@@ -79,4 +79,8 @@
 # song as it loads, against a frame rate you declare. The minimum note is the
 # one the file can speak to - the highest floor that invents no key collisions -
 # and on most songs that is the preset value anyway, which it says.
-__version__ = "1.8.0"
+#
+# 1.8.1 gives the retrigger gap one frame instead of one and a half. It and the
+# minimum note ask for the same thing - that a transition be caught by one poll
+# - and it was the only one of the three getting a different margin for it.
+__version__ = "1.8.1"

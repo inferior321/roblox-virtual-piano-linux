@@ -736,6 +736,18 @@ check("every path that touches the synth is lock-guarded",
 try:
     from rpiano.gui import MainWindow
 
+    # The game samples the keyboard once a frame. Minimum note and retrigger are
+    # the same requirement stated twice - a key seen down once, a key seen up
+    # once - so retrigger gets a frame, not the frame and a half it used to,
+    # which was the only one of the three asking differently for the same thing.
+    for fps, want in ((30, (50, 67, 33)), (60, (25, 33, 17)), (120, (12, 17, 8))):
+        check(f"frame margins at {fps} fps", MainWindow.frame_margins(fps) == want,
+              str(MainWindow.frame_margins(fps)))
+    dwell, note, retrigger = MainWindow.frame_margins(60)
+    check("retrigger is one frame, dwell is more",
+          retrigger < dwell and abs(retrigger - 1000 / 60) < 1.0,
+          f"retrigger {retrigger}ms against a {1000/60:.1f}ms frame")
+
     key = MainWindow._preset_key(0, 20)
     check("a preset key is a string, not a tuple",
           isinstance(key, str) and key == "0:20", repr(key))

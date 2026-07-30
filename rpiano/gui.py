@@ -1273,8 +1273,7 @@ class MainWindow(QMainWindow):
         """
         fps = max(1, self.config.game_fps)
         frame = 1000.0 / fps
-        dwell = max(4, round(frame * 1.5))
-        retrigger = max(4, round(frame * 1.5))
+        dwell, _preset_note, retrigger = self.frame_margins(fps)
 
         # A note has to outlast one frame poll to be seen at all: that is the
         # hard floor. Two frames is the comfortable default, and the cap - but a
@@ -1314,16 +1313,41 @@ class MainWindow(QMainWindow):
         self.auto_note.setText(summary)
         self.log("info", summary + ("   ·   " + "; ".join(reasons) if reasons else ""))
 
+    @staticmethod
+    def frame_margins(fps: int) -> tuple:
+        """(dwell, minimum note, retrigger) in ms for a frame rate.
+
+        The game samples the keyboard once a frame, so anything happening
+        entirely between two samples never happened. Each value buys visibility
+        against that.
+
+        Dwell gets a frame and a half. The modifier is read at the instant the
+        key press is handled and nothing says where in the frame that lands, so
+        it has to be held either side of the boundary.
+
+        Minimum note and retrigger are the same requirement stated twice - a key
+        seen down once, a key seen up once - so they get the same margin. Only
+        the note keeps a second frame, being the one whose failure is silence
+        rather than a repeat merging into one.
+        """
+        frame = 1000.0 / max(1, fps)
+        return (
+            max(4, round(frame * 1.5)),
+            max(8, round(frame * 2.0)),
+            max(4, round(frame)),
+        )
+
     def _apply_fps_preset(self, fps: int) -> None:
         # Choosing a fixed preset says plainly that AUTO should stop
         # deciding, or it would silently overwrite this on the next song.
         if self.config.auto_timing:
             self.auto_button.setChecked(False)
-        frame = 1000.0 / fps
-        self.dwell_spin.setValue(max(4, round(frame * 1.5)))
-        self.min_note_spin.setValue(max(8, round(frame * 2.0)))
-        self.retrigger_spin.setValue(max(4, round(frame * 1.5)))
-        self.log("info", f"Timing set for {fps} fps (frame is {frame:.1f}ms).")
+        dwell, min_note, retrigger = self.frame_margins(fps)
+        self.dwell_spin.setValue(dwell)
+        self.min_note_spin.setValue(min_note)
+        self.retrigger_spin.setValue(retrigger)
+        self.log("info", f"Timing set for {fps} fps "
+                         f"(frame is {1000.0 / max(1, fps):.1f}ms).")
 
     def _set_sustain_widgets(self, key: str) -> None:
         self.sustain_combo.blockSignals(True)

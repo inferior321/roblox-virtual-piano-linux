@@ -136,7 +136,16 @@ the frame and tells you the collisions are unavoidable at that frame rate.
 
 Dwell comes from the frame rate alone. How long a modifier must be held is a
 property of the game's polling, not of the music, so there is nothing in a MIDI
-file that could justify a value for it.
+file that could justify a value for it. It also keeps a frame and a half rather
+than a frame: the modifier is read at the instant the key press is handled, and
+nothing says where in the frame that lands, so it has to be held either side of
+the boundary.
+
+Retrigger gets one frame. It and the minimum note are the same requirement
+stated twice — a key seen down once, a key seen up once — and it was the only
+one of the three asking for something different. If repeated notes start
+sounding once instead of twice, that is the value to raise, or the frame rate
+you declared is optimistic.
 
 **Chord window** groups notes that start close together so a chord costs one
 shift press instead of one per note.
