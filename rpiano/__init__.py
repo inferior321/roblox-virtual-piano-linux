@@ -170,4 +170,13 @@
 # from the arrows that move the selection, so the question is a keystroke and
 # not asking costs going to look for a song that is no longer there. The answer
 # defaults to no, so dismissing a dialog opened by accident keeps the song.
-__version__ = "1.14.1"
+#
+# 1.15.0 drops the Delete and Ctrl+V shortcuts from the library. The list is a
+# thing you arrow around looking for something to play, and a key that changes
+# files sitting among the keys that only move the cursor is one that gets
+# pressed by accident eventually. Everything is aimed at now: the right-click
+# menu, which gains Paste into <folder>, or a drag from outside. Also fixes a
+# crash the menu would otherwise have made routine - an empty clipboard has no
+# mime data at all rather than empty mime data, and the menu asks every time it
+# opens.
+__version__ = "1.15.0"

@@ -58,30 +58,34 @@ was found.
 The pane is not only a list to pick from. Both ways of showing songs — the
 browse tree and the search results — handle files the way a file manager does.
 
-**Delete** asks, then sends the selected song to the Trash. It asks even
-though the Trash can give it back, because Delete sits one row under Rename in
-the menu and one key away from the arrows that move the selection — and the
-answer defaults to no, so dismissing a dialog you didn't mean to open keeps
-the song. If the drive it lives on has no Trash — a disk formatted for Windows
-generally hasn't — it says so and asks again before deleting for good. The key
-only works with the list focused, so pressing it while typing in the search box
-does what you'd expect there and nothing to your songs.
+**Right-click** is how all of it is reached. On a song: **Rename**, **Delete**,
+**Paste into** the folder holding it, and **Show in folder**. On a folder: the
+last two. The click takes the selection with it, so it acts on the row you
+clicked, and **Paste into** greys out when the clipboard has nothing on it.
 
-**Right-click** a song for **Rename**, **Delete** and **Show in folder**. The
-click takes the selection with it, so it acts on the row you clicked. Renaming
-keeps the `.mid` extension whatever you type: a song renamed to something the
-pane filters out would simply vanish, which reads as having deleted it.
+There are deliberately **no keyboard shortcuts**. Delete and Ctrl+V are what a
+file manager binds, but this list is a thing you arrow around while looking for
+something to play — and a key that changes files, sitting among the keys that
+only move the cursor, is a key that eventually gets pressed by accident.
+
+**Delete** asks first, then sends the song to the Trash, and the answer
+defaults to no. If the drive it lives on has no Trash — a disk formatted for
+Windows generally hasn't — it says so and asks again before deleting for good.
+
+**Rename** keeps the `.mid` extension whatever you type: a song renamed to
+something the pane filters out would simply vanish, which reads as having
+deleted it.
+
+**Paste into** takes what your file manager copied. A **cut** is honoured as a
+cut — the marker saying which lives in a clipboard entry of its own, and
+reading only the file list would quietly turn your cut into a copy and leave
+the original where it was.
 
 **Drag MIDI files in** from your file manager and they are copied into the
 folder you dropped on — a folder in the tree, a folder in the search results,
 or a song, which means the folder holding it. Dragging *within* the pane does
 nothing, so a song cannot be relocated by an accidental tug on the list.
 Anything that isn't a MIDI file is ignored, and the Log says which.
-
-**Ctrl+V** pastes files copied in your file manager into the selected folder.
-A **cut** is honoured as a cut — the marker saying which lives in a clipboard
-entry of its own, and reading only the file list would quietly turn your cut
-into a copy and leave the original where it was.
 
 A name that is already taken becomes `song (copy).mid` rather than overwriting
 anything or asking. Folders are left alone throughout: they can be dropped and

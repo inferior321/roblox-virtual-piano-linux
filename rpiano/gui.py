@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import QDir, QFile, QObject, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QShortcut
+from PyQt6.QtGui import QDesktopServices, QFont
 
 try:  # Qt 6 moved this out of QtWidgets
     from PyQt6.QtGui import QFileSystemModel
@@ -300,9 +300,12 @@ class MainWindow(QMainWindow):
     def _wire_file_management(self) -> None:
         """Delete, rename, drop and paste, on both ways of showing a song.
 
-        Every shortcut is bound to the view rather than to the window. Delete
-        on the window would fire while you were editing the search box, and
-        take the song behind it.
+        Deliberately no keyboard shortcuts. Delete and Ctrl+V are what a file
+        manager binds, but the list is a thing you arrow around while looking
+        for something to play, and a key that changes files sitting among the
+        keys that only move the cursor is a key that gets pressed by accident.
+        Everything here is reached by aiming at it: the right-click menu, or a
+        drag from outside.
         """
         for view in (self.tree, self.results):
             view.filesDropped.connect(self._files_dropped)
@@ -310,12 +313,6 @@ class MainWindow(QMainWindow):
             view.customContextMenuRequested.connect(
                 lambda pos, v=view: self._library_menu(v, pos)
             )
-            remove = QShortcut(QKeySequence.StandardKey.Delete, view)
-            remove.setContext(Qt.ShortcutContext.WidgetShortcut)
-            remove.activated.connect(self._delete_selected)
-            paste = QShortcut(QKeySequence.StandardKey.Paste, view)
-            paste.setContext(Qt.ShortcutContext.WidgetShortcut)
-            paste.activated.connect(self._paste_into_selected)
 
     def _selected_song(self) -> Path:
         """The song the next action applies to, or None if a row is not one."""
@@ -378,18 +375,30 @@ class MainWindow(QMainWindow):
             if item is not None:
                 view.setCurrentItem(item)
         song = self._selected_song()
-        if song is None:
+        folder = self._selected_folder()
+        if song is None and folder is None:
             return
         menu = QMenu(self)
-        menu.addAction("Rename…", self._rename_selected)
-        menu.addAction("Delete", self._delete_selected)
-        menu.addSeparator()
-        menu.addAction(
-            "Show in folder",
-            lambda: QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(song.parent))
-            ),
-        )
+        if song is not None:
+            menu.addAction("Rename…", self._rename_selected)
+            menu.addAction("Delete", self._delete_selected)
+            menu.addSeparator()
+        if folder is not None:
+            # A song's row pastes into the folder holding it, which is the same
+            # rule a drop onto that row already follows.
+            _action, waiting = self._clipboard_files()
+            paste = menu.addAction(
+                f"Paste into {folder.name}", lambda f=folder: self._paste_into(f)
+            )
+            paste.setEnabled(bool(waiting))
+            if not waiting:
+                paste.setToolTip("Nothing on the clipboard to paste.")
+            menu.addAction(
+                "Show in folder",
+                lambda f=folder: QDesktopServices.openUrl(
+                    QUrl.fromLocalFile(str(f))
+                ),
+            )
         menu.exec(view.viewport().mapToGlobal(pos))
 
     def _rename_selected(self) -> None:
@@ -480,21 +489,33 @@ class MainWindow(QMainWindow):
         songs, rest = split_midi([Path(p) for p in paths if p])
         self._copy_in(songs, rest, Path(folder), "Dropped")
 
-    def _paste_into_selected(self) -> None:
-        folder = self._selected_folder()
-        if folder is None:
-            self.log("info", "Choose a folder to paste into first.")
-            return
+    @staticmethod
+    def _clipboard_files() -> tuple:
+        """(what was asked for, the files) sitting on the clipboard now.
+
+        A cut and a copy carry the same list of files. Which one it was lives
+        in an entry of its own, and reading only the list would turn a cut into
+        a copy and leave the original where it was.
+        """
         clip = QApplication.clipboard().mimeData()
-        action, files = "", []
+        if clip is None:
+            # An empty clipboard, or one nothing has ever owned, has no mime
+            # data at all rather than empty mime data. The menu asks every time
+            # it opens, so this is the ordinary case, not the odd one.
+            return "", []
         if clip.hasFormat("x-special/gnome-copied-files"):
-            action, files = parse_clipboard(
+            return parse_clipboard(
                 bytes(clip.data("x-special/gnome-copied-files")).decode(
                     "utf-8", "replace"
                 )
             )
-        elif clip.hasUrls():
-            files = [Path(u.toLocalFile()) for u in clip.urls() if u.isLocalFile()]
+        if clip.hasUrls():
+            return "", [Path(u.toLocalFile()) for u in clip.urls()
+                        if u.isLocalFile()]
+        return "", []
+
+    def _paste_into(self, folder: Path) -> None:
+        action, files = self._clipboard_files()
         if not files:
             self.log("info", "There are no files on the clipboard.")
             return
