@@ -156,9 +156,21 @@ hundred songs with it.
 
 **Pause if another window takes the focus** (Input tab, on by default) is for
 the accident where a song ends up typing into the wrong place. When the count-in ends it
-notes whichever window is in front — the game — and from then on it watches.
-The moment the focus becomes anything else, every key is released and the song
-pauses, with a line in the Log naming what took over. Press Play to carry on.
+notes whichever window is in front — the game — and from then on it watches two
+things. If the focus becomes anything else, every key is released and the song
+pauses, with a line in the Log naming what took over. And if the **mouse leaves
+that window**, the same thing happens: a game can treat the pointer wandering
+off its edges as losing the focus and stop reading the keyboard, while the
+window manager still calls it the active window, so nothing else shows that the
+song has stopped landing anywhere.
+
+Get back to the window and use the play/pause hotkey to carry on. Not the Play
+button — clicking anything here brings the focus to this window, and the lock
+would pause it again a moment later.
+
+Several monitors need nothing special. X gives every screen one coordinate
+space, so a window on the monitor to the right is a window at x=3840 and the
+same single rectangle test covers it.
 
 It also refuses to start at all if the count-in runs out with **this** window
 still in front. That is the commonest way an autoplayer goes wrong, and it is

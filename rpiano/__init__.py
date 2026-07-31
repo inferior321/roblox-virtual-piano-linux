@@ -277,4 +277,13 @@
 # than the setting does, and it is inert wherever it cannot help: the other
 # backends send nothing to the system, and a machine that cannot say what has
 # the focus says so in the Log and plays anyway.
-__version__ = "1.23.0"
+#
+# 1.23.1 has the window lock watch the mouse as well as the focus. A game can
+# treat the pointer leaving its edges as losing the focus and stop reading the
+# keyboard, while the window manager still calls it the active window - so
+# nothing the lock was looking at changed, and the song went on typing into a
+# window that had stopped listening. It is one rectangle test in root
+# coordinates, which is also all a second monitor is: X gives every screen one
+# coordinate space, so a window on the monitor to the right is a window at
+# x=3840 and there is nothing per-monitor to work out.
+__version__ = "1.23.1"

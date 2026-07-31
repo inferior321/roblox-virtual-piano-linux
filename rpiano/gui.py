@@ -2596,8 +2596,12 @@ class MainWindow(QMainWindow):
         elif self.config.lock_window:
             self.lock_note.setText(
                 "The window in front when the count-in ends is the one the "
-                "song plays into. Click away and it pauses rather than typing "
-                "into whatever you clicked; press Play to carry on."
+                "song plays into. It pauses if anything else takes the focus, "
+                "and also if the mouse leaves that window - a game can stop "
+                "listening when the pointer wanders off it, while nothing else "
+                "shows that anything has changed. Get back to the window and "
+                "use the play/pause hotkey; clicking Play would bring the "
+                "focus here and pause it again."
             )
         else:
             self.lock_note.setText(
@@ -2633,20 +2637,46 @@ class MainWindow(QMainWindow):
         self.player.on_log("info", f"Window lock: playing into {found[1]!r}.")
         return True
 
+    def _resume_hint(self) -> str:
+        """How to start it again, which is not by clicking Play.
+
+        Clicking anything in this window makes this window the focused one, so
+        the lock would pause the song a moment later - and again the next time.
+        The global hotkey is the way back in, because it needs no click.
+        """
+        if self.config.hotkeys_enabled:
+            return f"press {self._hotkey_text(self.config.hotkey_playpause)}"
+        return "turn the global hotkeys on and use one"
+
     def _watch_focus(self) -> None:
-        """On a timer while a song runs. Pauses the moment the focus moves."""
+        """On a timer while a song runs. Two ways the keys stop landing."""
         if self._locked_to is None or self.player.state != PLAYING:
             return
+        name = self._locked_to[1]
+
         found = self._focus.active()
-        if found is None or found[0] == self._locked_to[0]:
+        if found is not None and found[0] != self._locked_to[0]:
+            self.player.pause()
+            where = found[1] or "another window"
+            self.log(
+                "warning",
+                f"Window lock: the focus moved to {where!r}, so the song is "
+                f"paused. Click back into {name!r} and {self._resume_hint()}.",
+            )
             return
-        self.player.pause()
-        where = found[1] or "another window"
-        self.log(
-            "warning",
-            f"Window lock: the focus moved to {where!r}, so the song is "
-            f"paused. Click back into {self._locked_to[1]!r} and press Play.",
-        )
+
+        # The window can still be the active one while the game has stopped
+        # listening, because a game may take the pointer leaving its edges as
+        # losing the focus. Nothing the window manager knows about changes, so
+        # the only way to see it is to look at where the mouse is.
+        if self._focus.pointer_inside(self._locked_to[0]) is False:
+            self.player.pause()
+            self.log(
+                "warning",
+                f"Window lock: the mouse left {name!r}, which stops it "
+                f"listening, so the song is paused. Move the mouse back over "
+                f"it and {self._resume_hint()}.",
+            )
 
     def _backend_changed(self, name: str) -> None:
         try:

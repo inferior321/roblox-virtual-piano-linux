@@ -50,6 +50,9 @@ class Focus:
         self._pid_atom = None
         self._asked = 0.0
         self._answer = None
+        self._pointer_for = None
+        self._pointer_asked = 0.0
+        self._pointer_answer = None
 
     def _connect(self):
         if self._display is None:
@@ -92,6 +95,53 @@ class Focus:
             # A display that has gone away, or a window that vanished between
             # being named and being asked about. Drop the connection so the
             # next call builds a fresh one rather than failing for ever.
+            self._display = None
+            return None
+
+    def pointer_inside(self, window_id: int):
+        """Is the mouse within that window? True, False, or None if unknowable.
+
+        A game can treat the pointer leaving its edges as losing the focus and
+        stop reading the keyboard, while the window manager still says it is
+        the active window - so the focus alone does not answer whether a song
+        is landing anywhere.
+
+        One rectangle test in root coordinates, which is all a second monitor
+        is: X gives every screen one coordinate space, so a window on the
+        monitor to the right is simply a window at x=3840 and there is nothing
+        per-monitor to work out.
+        """
+        now = time.perf_counter()
+        with self._lock:
+            if (window_id == self._pointer_for
+                    and now - self._pointer_asked < CACHE_SECONDS):
+                return self._pointer_answer
+            self._pointer_for = window_id
+            self._pointer_asked = now
+            self._pointer_answer = self._read_pointer(window_id)
+            return self._pointer_answer
+
+    def _read_pointer(self, window_id: int):
+        try:
+            display = self._connect()
+            root = display.screen().root
+            pointer = root.query_pointer()
+            if not pointer.same_screen:
+                # A different X *screen*, which is not a second monitor - those
+                # share this one. Nothing of ours is under that pointer.
+                return False
+            window = display.create_resource_object("window", window_id)
+            size = window.get_geometry()
+            # The destination is whichever window the call is made on, so the
+            # root translates the window's own (0, 0) into root coordinates.
+            # Asking the window instead returns the negative of it, which looks
+            # plausible and puts the rectangle in the wrong place.
+            origin = root.translate_coords(window, 0, 0)
+            return (
+                origin.x <= pointer.root_x < origin.x + size.width
+                and origin.y <= pointer.root_y < origin.y + size.height
+            )
+        except Exception:
             self._display = None
             return None
 
