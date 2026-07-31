@@ -509,9 +509,15 @@ class MainWindow(QMainWindow):
         if clicked is None:
             # The space around the rows is the folder being browsed, and the
             # only thing there is to do to a folder you are looking at from the
-            # inside is put another one in it. A selection is left alone: it
-            # took work to make and the click was not aimed at any of it.
-            if view is self.tree:
+            # inside is put another one in it.
+            #
+            # Only with nothing picked out, though, which is the same rule the
+            # folder rows follow: an action about a folder is offered when a
+            # folder is all there is. With songs picked out this would sit
+            # beside a selection it has nothing to do with, and with a folder
+            # picked out it would make one somewhere other than the folder that
+            # is highlighted - which is the confusion the rule is for.
+            if view is self.tree and not songs and not folders:
                 menu.addAction(
                     "Create subfolder…",
                     lambda f=self._library_root: self._new_folder(f),

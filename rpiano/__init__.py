@@ -243,4 +243,10 @@
 # since the click was aimed at none of it, and the search results have no such
 # menu - hits come from all over the library, so the space around them is not
 # any one folder.
-__version__ = "1.21.0"
+#
+# 1.21.1 holds the empty space to the same rule as everything else: an action
+# about a folder is offered when a folder is all there is. 1.21.0 let Create
+# subfolder appear whatever was picked out, which was the one place in the pane
+# that did not follow its own rule - and with a folder highlighted it offered
+# to make one somewhere else, which is the confusion the rule is for.
+__version__ = "1.21.1"
