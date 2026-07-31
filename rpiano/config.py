@@ -92,7 +92,13 @@ class AppConfig:
     # Watch the focused window while a song plays, and pause when it stops
     # being the one the count-in ended on. uinput only: it is a keyboard, and
     # what a keyboard types goes wherever the focus is.
-    lock_window: bool = False
+    #
+    # On by default. The accident it prevents - a song typed into a chat box,
+    # or into this program's own search field - costs more than the setting
+    # does, and it is inert wherever it cannot help: the other backends send
+    # nothing to the system, and a machine that cannot say what has the focus
+    # says so in the Log and plays anyway.
+    lock_window: bool = True
 
     always_on_top: bool = False
     opacity: int = 100

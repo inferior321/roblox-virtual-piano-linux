@@ -154,8 +154,8 @@ hundred songs with it.
 
 ## The window lock
 
-**Pause if another window takes the focus** (Input tab) is for the accident
-where a song ends up typing into the wrong place. When the count-in ends it
+**Pause if another window takes the focus** (Input tab, on by default) is for
+the accident where a song ends up typing into the wrong place. When the count-in ends it
 notes whichever window is in front — the game — and from then on it watches.
 The moment the focus becomes anything else, every key is released and the song
 pauses, with a line in the Log naming what took over. Press Play to carry on.

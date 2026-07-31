@@ -271,4 +271,10 @@
 #
 # xdotool is gone. It shelled out once per key event, so it was never usable
 # for playing anything; the keysym tables that existed only for it went too.
-__version__ = "1.22.0"
+#
+# 1.23.0 turns the window lock on by default. The accident it prevents - a song
+# typed into a chat box, or into this program's own search field - costs more
+# than the setting does, and it is inert wherever it cannot help: the other
+# backends send nothing to the system, and a machine that cannot say what has
+# the focus says so in the Log and plays anyway.
+__version__ = "1.23.0"
