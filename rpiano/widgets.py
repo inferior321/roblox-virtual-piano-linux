@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QRectF, QSize, QSortFilterProxyModel, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -47,6 +47,41 @@ WHITE_NOTES = tuple(n for n in range(LOWEST, HIGHEST + 1) if is_white(n))
 BLACK_NOTES = tuple(n for n in range(LOWEST, HIGHEST + 1) if not is_white(n))
 WHITE_INDEX = {note: index for index, note in enumerate(WHITE_NOTES)}
 MIDDLE_C_INDEX = WHITE_INDEX.get(60)
+
+
+class LibrarySort(QSortFilterProxyModel):
+    """Keeps the browse tree in order, including whatever was just made.
+
+    QFileSystemModel sorts a folder when it first reads it and appends anything
+    that turns up afterwards, so a folder created from the menu landed at the
+    bottom of the list whatever it was called - and stayed there, since asking
+    the model to sort again does nothing when the column and order have not
+    changed. A proxy sorts on every insertion instead.
+
+    Folders before files, then by name and not by case: the order the model
+    itself used, and the one a file manager uses.
+    """
+
+    def __init__(self, source) -> None:
+        super().__init__()
+        self.setSourceModel(source)
+        self.setDynamicSortFilter(True)
+        self.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+    def lessThan(self, left, right) -> bool:
+        source = self.sourceModel()
+        left_is_dir = source.isDir(left)
+        if left_is_dir != source.isDir(right):
+            return left_is_dir
+        return source.fileName(left).lower() < source.fileName(right).lower()
+
+    def path_for(self, index) -> str:
+        """The file a row of this model stands for."""
+        return self.sourceModel().filePath(self.mapToSource(index))
+
+    def index_for(self, path):
+        """The row for a file, in this model's own numbering."""
+        return self.mapFromSource(self.sourceModel().index(str(path)))
 
 
 class _MidiDrops:
@@ -122,7 +157,7 @@ class LibraryTree(_MidiDrops, QTreeView):
             index = self.rootIndex()
             if not index.isValid():
                 return ""
-        path = Path(self.model().filePath(index))
+        path = Path(self.model().path_for(index))
         return str(path if path.is_dir() else path.parent)
 
 

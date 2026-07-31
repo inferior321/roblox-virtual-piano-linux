@@ -120,6 +120,7 @@ from .library import (
 )
 from .widgets import (
     ClickableLabel,
+    LibrarySort,
     LibraryResults,
     LibraryTree,
     WrappedLabel,
@@ -281,7 +282,12 @@ class MainWindow(QMainWindow):
         box.addWidget(self.search_box)
 
         self.tree = LibraryTree()
-        self.tree.setModel(self.fs_model)
+        # A sorting proxy between the model and the view, so a folder made
+        # from the menu appears where its name belongs rather than at the end.
+        self.tree_model = LibrarySort(self.fs_model)
+        self.tree.setModel(self.tree_model)
+        self.tree.setSortingEnabled(True)
+        self.tree.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         for column in range(1, 4):
             self.tree.hideColumn(column)
         self.tree.setHeaderHidden(True)
@@ -365,7 +371,7 @@ class MainWindow(QMainWindow):
             for index in self.tree.selectionModel().selectedIndexes():
                 if index.column():
                     continue
-                path = Path(self.fs_model.filePath(index))
+                path = Path(self.tree_model.path_for(index))
                 if path not in seen and path.is_file() and is_midi(path):
                     seen.add(path)
                     found.append(path)
@@ -382,7 +388,7 @@ class MainWindow(QMainWindow):
     def _path_for(self, view, index) -> Path:
         """The file or folder a row stands for, in either of the two views."""
         if view is self.tree:
-            return Path(self.fs_model.filePath(index))
+            return Path(self.tree_model.path_for(index))
         item = self.results.itemFromIndex(index)
         stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         return Path(stored) if stored else None
@@ -434,7 +440,7 @@ class MainWindow(QMainWindow):
             for index in self.tree.selectionModel().selectedIndexes():
                 if index.column():
                     continue
-                path = Path(self.fs_model.filePath(index))
+                path = Path(self.tree_model.path_for(index))
                 if path not in seen and path.is_dir():
                     seen.add(path)
                     found.append(path)
@@ -454,7 +460,7 @@ class MainWindow(QMainWindow):
         """
         if view is self.tree:
             index = view.indexAt(pos)
-            return Path(self.fs_model.filePath(index)) if index.isValid() else None
+            return Path(self.tree_model.path_for(index)) if index.isValid() else None
         item = view.itemAt(pos)
         stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         return Path(stored) if stored else None
@@ -468,7 +474,7 @@ class MainWindow(QMainWindow):
         """Where a paste would go: the folder chosen, or the one holding it."""
         if self.library_stack.currentWidget() is self.tree:
             index = self.tree.currentIndex()
-            path = (Path(self.fs_model.filePath(index)) if index.isValid()
+            path = (Path(self.tree_model.path_for(index)) if index.isValid()
                     else self._library_root)
         else:
             item = self.results.currentItem()
@@ -607,7 +613,7 @@ class MainWindow(QMainWindow):
         # Picked out where it was made, so it is already the folder songs would
         # be pasted or moved into - which is the reason for making one.
         if self.library_stack.currentWidget() is self.tree:
-            index = self.fs_model.index(str(target))
+            index = self.tree_model.index_for(target)
             if index.isValid():
                 self.tree.setCurrentIndex(index)
                 self.tree.scrollTo(index)
@@ -1673,7 +1679,7 @@ class MainWindow(QMainWindow):
         if not folder.is_dir():
             folder = Path.home()
         self.fs_model.setRootPath(str(folder))
-        self.tree.setRootIndex(self.fs_model.index(str(folder)))
+        self.tree.setRootIndex(self.tree_model.index_for(folder))
         self.folder_label.setText(str(folder))
         if save:
             self.config.midi_folder = str(folder)
@@ -1877,7 +1883,7 @@ class MainWindow(QMainWindow):
             self._load_path(Path(stored))
 
     def _tree_activated(self, index) -> None:
-        path = Path(self.fs_model.filePath(index))
+        path = Path(self.tree_model.path_for(index))
         if path.is_file() and path.suffix.lower() in (".mid", ".midi"):
             self._load_path(path)
 

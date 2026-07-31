@@ -73,6 +73,8 @@ INHERITED_OK = {
     "setCursor", "setToolTip", "heightForWidth",
     "setAcceptDrops", "setDragEnabled", "setDragDropMode",
     "setDropIndicatorShown", "indexAt", "itemAt", "model", "rootIndex",
+    "setSourceModel", "sourceModel", "mapToSource", "mapFromSource",
+    "setDynamicSortFilter", "setSortCaseSensitivity",
 }
 
 for path in sorted(PACKAGE.glob("*.py")):

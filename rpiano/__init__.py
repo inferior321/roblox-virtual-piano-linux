@@ -286,4 +286,13 @@
 # coordinates, which is also all a second monitor is: X gives every screen one
 # coordinate space, so a window on the monitor to the right is a window at
 # x=3840 and there is nothing per-monitor to work out.
-__version__ = "1.23.1"
+#
+# 1.23.2 keeps the browse tree in order when something is added to it. A folder
+# made from the menu appeared at the bottom of the list whatever it was called.
+# QFileSystemModel sorts a folder when it first reads it and appends anything
+# that turns up afterwards - and asking it to sort again does nothing at all,
+# because it returns early when the column and order have not changed, so
+# neither enabling sorting on the view nor toggling the order fixed it. A
+# sorting proxy between the model and the view sorts on every insertion, which
+# does. Folders still come before files, and names still ignore case.
+__version__ = "1.23.2"
