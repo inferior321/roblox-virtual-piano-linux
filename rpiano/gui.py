@@ -9,7 +9,15 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QDir, QFile, QObject, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import (
+    QDir,
+    QFile,
+    QItemSelectionModel,
+    QObject,
+    Qt,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QDesktopServices, QFont
 
 try:  # Qt 6 moved this out of QtWidgets
@@ -299,6 +307,8 @@ class MainWindow(QMainWindow):
 
     # -- managing the files, not just listing them -------------------------
 
+    _choosing = False       # guards the one-folder rule against itself
+
     def _wire_file_management(self) -> None:
         """Delete, rename, drop and paste, on both ways of showing a song.
 
@@ -316,6 +326,9 @@ class MainWindow(QMainWindow):
                 QAbstractItemView.SelectionMode.ExtendedSelection
             )
             view.filesDropped.connect(self._files_dropped)
+            view.selectionModel().selectionChanged.connect(
+                lambda picked, gone, v=view: self._keep_one_folder(v, picked)
+            )
             view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             view.customContextMenuRequested.connect(
                 lambda pos, v=view: self._library_menu(v, pos)
@@ -347,6 +360,53 @@ class MainWindow(QMainWindow):
                 if path.is_file() and is_midi(path):
                     found.append(path)
         return found
+
+    def _path_for(self, view, index) -> Path:
+        """The file or folder a row stands for, in either of the two views."""
+        if view is self.tree:
+            return Path(self.fs_model.filePath(index))
+        item = self.results.itemFromIndex(index)
+        stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return Path(stored) if stored else None
+
+    def _keep_one_folder(self, view, picked) -> None:
+        """Only ever one folder picked out: the one chosen last.
+
+        Songs add up, because deleting or moving several at once is the point
+        of picking out several. A folder is the other half of a move - where
+        the songs are going - and there is only one of those. Two would take
+        the Move entry off the menu with nothing to say why, so choosing a
+        second folder lets go of the first instead.
+        """
+        if self._choosing:
+            return
+        fresh = [
+            index for index in picked.indexes()
+            if not index.column()
+            and (self._path_for(view, index) or Path("/")).is_dir()
+        ]
+        if not fresh:
+            return
+        keep = fresh[-1]
+        model = view.selectionModel()
+        stale = []
+        for index in model.selectedIndexes():
+            if index.column() or index == keep:
+                continue
+            path = self._path_for(view, index)
+            if path is not None and path.is_dir():
+                stale.append(index)
+        if not stale:
+            return
+        # Deselecting inside a selection change asks for the handler again.
+        self._choosing = True
+        for index in stale:
+            model.select(
+                index,
+                QItemSelectionModel.SelectionFlag.Deselect
+                | QItemSelectionModel.SelectionFlag.Rows,
+            )
+        self._choosing = False
 
     def _selected_folders(self) -> list:
         """Every folder picked out. The mirror of the songs, for moving into."""

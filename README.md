@@ -69,9 +69,15 @@ several songs cannot share one new name, and they are not all in one folder.
 
 **Moving songs between folders** is done by picking out the songs *and* the
 folder to send them to, then right-clicking either — the menu gains **Move N
-songs to the selected folder**. It needs exactly one folder in the selection,
-since two is not an answer to "where", and it is absent when every song picked
-out is already in that folder. This is the only way to move a song inside the
+songs to the selected folder**. It is absent when every song picked out is
+already in that folder.
+
+Songs add up as you pick them, but **only ever one folder is held at a time**:
+choosing a second lets go of the first, so the last one clicked is where the
+songs will go. There is only one answer to "where", and two folders would take
+the Move entry off the menu with nothing to say why. Swapping the folder leaves
+the songs alone, so you can change your mind about the destination without
+picking them all out again. This is the only way to move a song inside the
 library: dragging within the pane deliberately does nothing, so nothing gets
 relocated by an accidental tug on the list.
 

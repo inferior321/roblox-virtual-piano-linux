@@ -209,4 +209,11 @@
 # also asks what was clicked rather than only what is selected: with a folder
 # and some songs picked out together, clicking the folder and clicking a song
 # are two different questions and were getting one answer.
-__version__ = "1.17.0"
+#
+# 1.17.1 holds one folder at a time in the library selection. Songs add up,
+# because deleting or moving several at once is the point of picking out
+# several; a folder is the other half of a move and there is only one of those.
+# Choosing a second lets go of the first, so the last one clicked is where the
+# songs go - where before, two folders quietly took the Move entry off the menu
+# with nothing to say why.
+__version__ = "1.17.1"
