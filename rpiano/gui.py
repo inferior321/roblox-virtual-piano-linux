@@ -419,8 +419,20 @@ class MainWindow(QMainWindow):
         song = self._selected_song()
         if song is None:
             return
-        # What a file manager's Delete key does: to the Trash, and no dialog,
-        # because there is somewhere to get it back from.
+        # Asked for even though the Trash can give it back, because Delete sits
+        # one row under Rename in the menu and one key from the arrows that
+        # move the selection. The cost of the question is a keystroke; the cost
+        # of not asking is going to look for a song that is not there any more.
+        if QMessageBox.question(
+            self,
+            "Delete",
+            f"Move {song.name} to the Trash?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            # Answering by reflex says no. Enter and space are how a dialog you
+            # did not mean to open gets dismissed.
+            QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
         if not trashed(QFile.moveToTrash(str(song))):
             # A Trash is a property of the volume, and a drive formatted for
             # Windows, or mounted without room for one, simply has not got one.

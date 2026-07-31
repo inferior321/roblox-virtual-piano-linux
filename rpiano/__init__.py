@@ -164,4 +164,10 @@
 # moveToTrash, so the result is a (worked, where it went) pair: read as a bool,
 # every two-item tuple is truthy, and a drive with no Trash reported the file
 # gone with the file still sitting there.
-__version__ = "1.14.0"
+#
+# 1.14.1 asks before deleting a song. The Trash can give it back, which is why
+# it did not ask - but Delete sits one row under Rename in the menu and one key
+# from the arrows that move the selection, so the question is a keystroke and
+# not asking costs going to look for a song that is no longer there. The answer
+# defaults to no, so dismissing a dialog opened by accident keeps the song.
+__version__ = "1.14.1"

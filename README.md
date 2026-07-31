@@ -58,11 +58,14 @@ was found.
 The pane is not only a list to pick from. Both ways of showing songs — the
 browse tree and the search results — handle files the way a file manager does.
 
-**Delete** sends the selected song to the Trash. No dialog, because there is
-somewhere to get it back from. If the drive it lives on has no Trash — a disk
-formatted for Windows generally hasn't — it says so and asks before deleting
-for good. The key only works with the list focused, so pressing it while typing
-in the search box does what you'd expect there and nothing to your songs.
+**Delete** asks, then sends the selected song to the Trash. It asks even
+though the Trash can give it back, because Delete sits one row under Rename in
+the menu and one key away from the arrows that move the selection — and the
+answer defaults to no, so dismissing a dialog you didn't mean to open keeps
+the song. If the drive it lives on has no Trash — a disk formatted for Windows
+generally hasn't — it says so and asks again before deleting for good. The key
+only works with the list focused, so pressing it while typing in the search box
+does what you'd expect there and nothing to your songs.
 
 **Right-click** a song for **Rename**, **Delete** and **Show in folder**. The
 click takes the selection with it, so it acts on the row you clicked. Renaming
