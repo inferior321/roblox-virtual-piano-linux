@@ -29,6 +29,7 @@ from pathlib import Path
 
 from . import theme
 from .layouts import KeyStroke, Layout, note_name
+from .library import is_midi
 
 WHITE_PITCH_CLASSES = (0, 2, 4, 5, 7, 9, 11)
 LOWEST = 21    # A0
@@ -55,9 +56,11 @@ class _MidiDrops:
     around, so nothing here starts a drag and one that started here is refused
     - a song cannot be relocated, or lost, by an accidental tug on the list.
 
-    A drag carrying anything at all is accepted, rather than only one carrying
-    MIDI files. Refusing at the door leaves a "no" cursor and no reason for it;
-    accepting and then saying in the Log what was ignored is an answer.
+    A drag has to be carrying at least one song to be accepted - the same rule
+    the Paste menu entry follows. A cursor that says no is the answer to
+    dragging a photo onto a music library, and it says it while there is still
+    time to drop it somewhere else. Anything else riding along with a song is
+    let through and reported in the Log rather than refusing the whole drag.
     """
 
     filesDropped = pyqtSignal(list, str)
@@ -73,7 +76,12 @@ class _MidiDrops:
         raise NotImplementedError
 
     def _wanted(self, event) -> bool:
-        return event.source() is None and event.mimeData().hasUrls()
+        if event.source() is not None or not event.mimeData().hasUrls():
+            return False
+        return any(
+            url.isLocalFile() and is_midi(url.toLocalFile())
+            for url in event.mimeData().urls()
+        )
 
     def dragEnterEvent(self, event) -> None:
         if self._wanted(event):

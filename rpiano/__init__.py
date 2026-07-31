@@ -186,4 +186,11 @@
 # on the clipboard - an entry that can never be chosen is a line to read past
 # every time. The menu also has colours now: QMenu was the one widget the
 # stylesheet never mentioned, so the highlight followed no theme at all.
-__version__ = "1.15.1"
+#
+# 1.15.2 stops offering to paste what cannot be pasted. Both the menu entry and
+# the drag were asking whether the clipboard held any files at all rather than
+# whether it held a song, so copying a photo put a Paste into folder on the
+# menu that would have done nothing but write a line in the Log. One rule in
+# both places now: at least one of them has to be a song. Anything riding along
+# beside one is still let through and reported.
+__version__ = "1.15.2"

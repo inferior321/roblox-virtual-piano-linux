@@ -65,8 +65,9 @@ clicked.
 
 Nothing appears that cannot be used. Pasting is something you do to a folder,
 so it is not offered on a song that happens to sit in one — and it is absent
-altogether when there is nothing on the clipboard, rather than sitting there
-greyed out as a line to read past every time.
+altogether unless the clipboard actually holds a song, rather than sitting
+there as a line to read past every time. A folder of holiday photos on the
+clipboard is not something this can paste, so it does not offer to.
 
 There are deliberately **no keyboard shortcuts**. Delete and Ctrl+V are what a
 file manager binds, but this list is a thing you arrow around while looking for
@@ -90,7 +91,9 @@ the original where it was.
 folder you dropped on — a folder in the tree, a folder in the search results,
 or a song, which means the folder holding it. Dragging *within* the pane does
 nothing, so a song cannot be relocated by an accidental tug on the list.
-Anything that isn't a MIDI file is ignored, and the Log says which.
+A drag carrying no MIDI file at all is refused, so the cursor tells you while
+there is still time to drop it somewhere else. Anything riding along beside a
+song is let through and ignored, and the Log says which.
 
 A name that is already taken becomes `song (copy).mid` rather than overwriting
 anything or asking. Folders are left alone throughout: they can be dropped and

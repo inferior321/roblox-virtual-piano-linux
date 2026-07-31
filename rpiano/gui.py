@@ -389,7 +389,10 @@ class MainWindow(QMainWindow):
             # is something to paste: an entry that can never be chosen is a
             # line to read past every time the menu opens.
             _action, waiting = self._clipboard_files()
-            if waiting:
+            # At least one thing on the clipboard has to be a song. A folder of
+            # holiday photos on the clipboard is not something this can paste,
+            # so offering to would be offering to do nothing.
+            if any(is_midi(item) for item in waiting):
                 menu.addAction(
                     "Paste into folder", lambda f=folder: self._paste_into(f)
                 )
