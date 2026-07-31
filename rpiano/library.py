@@ -169,6 +169,18 @@ def folder_contents(folder) -> tuple:
     return songs, others
 
 
+def folder_rename_target(path, typed: str) -> tuple:
+    """Where renaming a folder to `typed` would put it, or (None, why not).
+
+    The rules for making one, plus the one that only comes up when renaming:
+    typing the name it already has is not a mistake, it is nothing to do.
+    """
+    path = Path(path)
+    if (typed or "").strip() == path.name:
+        return None, ""
+    return folder_target(path.parent, typed)
+
+
 def trashed(result) -> bool:
     """Did a QFile.moveToTrash call actually work?
 

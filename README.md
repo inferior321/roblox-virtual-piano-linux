@@ -81,8 +81,9 @@ picking them all out again. This is the only way to move a song inside the
 library: dragging within the pane deliberately does nothing, so nothing gets
 relocated by an accidental tug on the list.
 
-**Create subfolder** and **Delete folder** appear when nothing but a folder is
-picked out, so they are never sitting next to the actions that are about songs.
+**Create subfolder**, **Rename folder** and **Delete folder** appear when
+nothing but a folder is picked out, so they are never sitting next to the
+actions that are about songs.
 
 *Create subfolder* asks what to call it in the same sort of box as Rename. It
 refuses a name already taken, one with a slash in it, and one starting with a
@@ -91,12 +92,19 @@ them: the folder would be made and then never seen again. What it makes is
 picked out as soon as it exists, so it is already the folder songs would be
 pasted or moved into.
 
+*Rename folder* uses the same box and the same rules. Everything under it
+comes along, so a song you have open from three folders down keeps playing and
+still knows where it lives.
+
 *Delete folder* takes the folder and everything under it, and the question says
 how much that is — "Everything inside goes with it: 84 songs and 3 other
 files" — counted all the way down, including what is nested deeper than you
 were thinking about. It goes to the Trash whole, contents intact, so it can be
-put back. The folder the library is currently showing cannot be deleted; point
-the library somewhere else first.
+put back.
+
+The folder the library is currently showing cannot be renamed or deleted from
+here, nor can one holding it — either would move the ground out from under the
+pane. Point the library somewhere else first.
 
 Nothing appears that cannot be used. Pasting is something you do to a folder,
 so it is not offered on a song that happens to sit in one — and it is absent

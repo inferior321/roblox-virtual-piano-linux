@@ -1143,6 +1143,7 @@ import tempfile
 from rpiano.library import (
     copy_into,
     folder_contents,
+    folder_rename_target,
     folder_target,
     move_into,
     parse_clipboard,
@@ -1257,6 +1258,20 @@ for typed, expected in (("", None), ("   ", None), ("bad/name", None),
 check("and a hidden name says why, rather than just refusing",
       "hidden" in folder_target(sandbox, ".x")[1],
       folder_target(sandbox, ".x")[1])
+
+# Renaming a folder wants the same rules as making one, plus the one that only
+# comes up when renaming: the name it already has is not a mistake to correct.
+(sandbox / "rock").mkdir()
+for typed, expected, why_wanted in (
+    ("", None, True), ("bad/name", None, True), ("..", None, True),
+    (".hidden", None, True), ("taken", None, True),
+    ("rock", None, False),          # unchanged: refused, but with nothing to say
+    ("Rock and roll", "Rock and roll", False),
+):
+    got, why = folder_rename_target(sandbox / "rock", typed)
+    check(f"renaming a folder to {typed!r} gives {expected}",
+          (got.name if got else None) == expected and bool(why) == why_wanted,
+          f"{got}, {why!r}")
 
 check("a cut on the clipboard is not read as a copy",
       parse_clipboard("cut\nfile:///m/a.mid") == ("cut", [Path("/m/a.mid")]))

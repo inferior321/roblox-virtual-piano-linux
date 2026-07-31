@@ -106,6 +106,7 @@ from .player import (
 from .library import (
     copy_into,
     folder_contents,
+    folder_rename_target,
     folder_target,
     is_midi,
     move_into,
@@ -518,6 +519,9 @@ class MainWindow(QMainWindow):
                     "Create subfolder…", lambda f=clicked: self._new_folder(f)
                 )
                 menu.addAction(
+                    "Rename folder…", lambda f=clicked: self._rename_folder(f)
+                )
+                menu.addAction(
                     "Delete folder", lambda f=clicked: self._delete_folder(f)
                 )
                 menu.addSeparator()
@@ -585,6 +589,47 @@ class MainWindow(QMainWindow):
                 self.tree.setCurrentIndex(index)
                 self.tree.scrollTo(index)
 
+    def _rename_folder(self, folder: Path) -> None:
+        if self._is_the_root(folder, "renamed"):
+            return
+        typed, ok = QInputDialog.getText(
+            self, "Rename folder", "New name:",
+            QLineEdit.EchoMode.Normal, folder.name
+        )
+        if not ok:
+            return
+        target, why = folder_rename_target(folder, typed)
+        if target is None:
+            if why:
+                QMessageBox.warning(self, "Rename folder", why)
+            return
+        try:
+            folder.rename(target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename folder", exc.strerror or str(exc))
+            return
+        # Every song under it has moved with it, including the one playing.
+        for known in (self.config.last_file, getattr(self.song, "path", None)):
+            if known and folder in Path(known).parents:
+                self._file_moved(
+                    Path(known), target / Path(known).relative_to(folder)
+                )
+        self.log("info", f"Renamed {folder.name} to {target.name}.")
+        self._refresh_library()
+
+    def _is_the_root(self, folder: Path, verb: str) -> bool:
+        """The folder the library is showing cannot be moved out from under it."""
+        if folder == self._library_root or folder in self._library_root.parents:
+            QMessageBox.warning(
+                self,
+                "Library",
+                f"That is the folder the library is showing, or one holding "
+                f"it, so it cannot be {verb} from here. Point the library "
+                f"somewhere else first.",
+            )
+            return True
+        return False
+
     def _delete_folder(self, folder: Path) -> None:
         """The whole folder, and everything under it, to the Trash.
 
@@ -592,13 +637,7 @@ class MainWindow(QMainWindow):
         much is inside rather than only what the folder is called - "and the 84
         songs in it" is the part worth reading.
         """
-        if folder == self._library_root or folder in self._library_root.parents:
-            QMessageBox.warning(
-                self,
-                "Delete folder",
-                "That is the folder the library is showing, or one holding "
-                "it. Point the library somewhere else first.",
-            )
+        if self._is_the_root(folder, "deleted"):
             return
         songs, others = folder_contents(folder)
         inside = []

@@ -230,4 +230,11 @@
 # deeper than they were thinking about. The Trash takes a folder whole with its
 # contents intact, so it can be put back; the folder the library is showing is
 # refused, since deleting it would leave the pane looking at nothing.
-__version__ = "1.19.0"
+#
+# 1.20.0 renames folders, on the same rules as making one plus the one that
+# only comes up when renaming - the name it already has is nothing to do rather
+# than a collision to complain about. Everything under it comes along, so a
+# song open from three folders down keeps playing and still knows where it
+# lives. The library's own folder is refused, the same as for deleting: either
+# would move the ground out from under the pane.
+__version__ = "1.20.0"
