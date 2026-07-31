@@ -383,16 +383,17 @@ class MainWindow(QMainWindow):
             menu.addAction("Rename…", self._rename_selected)
             menu.addAction("Delete", self._delete_selected)
             menu.addSeparator()
-        if folder is not None:
-            # A song's row pastes into the folder holding it, which is the same
-            # rule a drop onto that row already follows.
+        elif folder is not None:
+            # Pasting is something you do to a folder, so it is offered on one
+            # and not on a song that happens to sit in one. And only when there
+            # is something to paste: an entry that can never be chosen is a
+            # line to read past every time the menu opens.
             _action, waiting = self._clipboard_files()
-            paste = menu.addAction(
-                f"Paste into {folder.name}", lambda f=folder: self._paste_into(f)
-            )
-            paste.setEnabled(bool(waiting))
-            if not waiting:
-                paste.setToolTip("Nothing on the clipboard to paste.")
+            if waiting:
+                menu.addAction(
+                    "Paste into folder", lambda f=folder: self._paste_into(f)
+                )
+        if folder is not None:
             menu.addAction(
                 "Show in folder",
                 lambda f=folder: QDesktopServices.openUrl(

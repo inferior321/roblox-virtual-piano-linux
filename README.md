@@ -58,10 +58,15 @@ was found.
 The pane is not only a list to pick from. Both ways of showing songs — the
 browse tree and the search results — handle files the way a file manager does.
 
-**Right-click** is how all of it is reached. On a song: **Rename**, **Delete**,
-**Paste into** the folder holding it, and **Show in folder**. On a folder: the
-last two. The click takes the selection with it, so it acts on the row you
-clicked, and **Paste into** greys out when the clipboard has nothing on it.
+**Right-click** is how all of it is reached. On a song: **Rename**, **Delete**
+and **Show in folder**. On a folder: **Paste into folder** and **Show in
+folder**. The click takes the selection with it, so it acts on the row you
+clicked.
+
+Nothing appears that cannot be used. Pasting is something you do to a folder,
+so it is not offered on a song that happens to sit in one — and it is absent
+altogether when there is nothing on the clipboard, rather than sitting there
+greyed out as a line to read past every time.
 
 There are deliberately **no keyboard shortcuts**. Delete and Ctrl+V are what a
 file manager binds, but this list is a thing you arrow around while looking for

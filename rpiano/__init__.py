@@ -179,4 +179,11 @@
 # crash the menu would otherwise have made routine - an empty clipboard has no
 # mime data at all rather than empty mime data, and the menu asks every time it
 # opens.
-__version__ = "1.15.0"
+#
+# 1.15.1 trims the library's right-click menu to what can actually be used.
+# Pasting is something you do to a folder, so it is off the menu for a song
+# that happens to sit in one, and gone rather than greyed when there is nothing
+# on the clipboard - an entry that can never be chosen is a line to read past
+# every time. The menu also has colours now: QMenu was the one widget the
+# stylesheet never mentioned, so the highlight followed no theme at all.
+__version__ = "1.15.1"

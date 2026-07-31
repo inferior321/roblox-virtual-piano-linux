@@ -178,6 +178,17 @@ QListWidget {{
     border-radius: 6px;
     outline: none;
 }}
+QMenu {{
+    background: {PANEL};
+    color: {IVORY};
+    border: 1px solid {LINE};
+    padding: 4px;
+}}
+QMenu::item {{ padding: 6px 22px; border-radius: 3px; }}
+QMenu::item:selected {{ background: {AMETHYST_DIM}; color: {IVORY}; }}
+QMenu::item:disabled {{ color: {MUTED}; }}
+QMenu::separator {{ height: 1px; background: {LINE}; margin: 4px 8px; }}
+
 QListWidget::item {{ padding: 5px 4px; }}
 QListWidget::item:selected {{ background: {AMETHYST_DIM}; }}
 
