@@ -193,4 +193,12 @@
 # menu that would have done nothing but write a line in the Log. One rule in
 # both places now: at least one of them has to be a song. Anything riding along
 # beside one is still let through and reported.
-__version__ = "1.15.2"
+#
+# 1.16.0 lets several songs be picked out at once and deleted together, which
+# is the way back out for a library that files come into a dozen at a time. The
+# menu for a selection carries only Delete: several songs cannot share one new
+# name and are not all in one folder, so nothing else on it would mean
+# anything. A right-click inside a selection leaves it alone, and one outside
+# starts a new one - otherwise choosing seven songs and right-clicking any of
+# them would throw six of them away.
+__version__ = "1.16.0"

@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover
     from PyQt6.QtWidgets import QFileSystemModel
 
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -308,28 +309,48 @@ class MainWindow(QMainWindow):
         drag from outside.
         """
         for view in (self.tree, self.results):
+            # Ctrl and shift both, because it is one setting and a run of songs
+            # picked with shift is what anyone reaches for after the first two.
+            view.setSelectionMode(
+                QAbstractItemView.SelectionMode.ExtendedSelection
+            )
             view.filesDropped.connect(self._files_dropped)
             view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             view.customContextMenuRequested.connect(
                 lambda pos, v=view: self._library_menu(v, pos)
             )
 
-    def _selected_song(self) -> Path:
-        """The song the next action applies to, or None if a row is not one."""
+    def _selected_songs(self) -> list:
+        """Every song picked out, in the order they are listed.
+
+        A selection can hold folders and, in the results, a heading. They are
+        not songs, so they are not what a delete is about - the songs among
+        them are, and a selection of nothing else does nothing.
+        """
+        found = []
         if self.library_stack.currentWidget() is self.tree:
-            index = self.tree.currentIndex()
-            if not index.isValid():
-                return None
-            path = Path(self.fs_model.filePath(index))
-            return path if path.is_file() and is_midi(path) else None
-        item = self.results.currentItem()
-        if item is None:
-            return None
-        stored = item.data(0, Qt.ItemDataRole.UserRole)
-        if not stored:
-            return None
-        path = Path(stored)
-        return path if path.is_file() and is_midi(path) else None
+            seen = set()
+            for index in self.tree.selectionModel().selectedIndexes():
+                if index.column():
+                    continue
+                path = Path(self.fs_model.filePath(index))
+                if path not in seen and path.is_file() and is_midi(path):
+                    seen.add(path)
+                    found.append(path)
+        else:
+            for item in self.results.selectedItems():
+                stored = item.data(0, Qt.ItemDataRole.UserRole)
+                if not stored:
+                    continue
+                path = Path(stored)
+                if path.is_file() and is_midi(path):
+                    found.append(path)
+        return found
+
+    def _selected_song(self) -> Path:
+        """The one song picked out, or None if it is not exactly one."""
+        songs = self._selected_songs()
+        return songs[0] if len(songs) == 1 else None
 
     def _selected_folder(self) -> Path:
         """Where a paste would go: the folder chosen, or the one holding it."""
@@ -366,14 +387,27 @@ class MainWindow(QMainWindow):
         # Right-clicking a row acts on that row, the way it does everywhere
         # else, so the click takes the selection with it before the menu asks
         # what is selected.
+        # A right-click inside an existing selection leaves it alone, and one
+        # outside it starts a new one. Otherwise picking out seven songs and
+        # right-clicking any of them would throw six of them away.
         if view is self.tree:
             index = view.indexAt(pos)
-            if index.isValid():
+            if index.isValid() and not view.selectionModel().isSelected(index):
                 view.setCurrentIndex(index)
         else:
             item = view.itemAt(pos)
-            if item is not None:
+            if item is not None and not item.isSelected():
                 view.setCurrentItem(item)
+        songs = self._selected_songs()
+        if len(songs) > 1:
+            # Nothing else on the menu means anything for a handful at once:
+            # they cannot share one name, and they are not all in one folder.
+            menu = QMenu(self)
+            menu.addAction(
+                f"Delete {len(songs)} songs", self._delete_selected
+            )
+            menu.exec(view.viewport().mapToGlobal(pos))
+            return
         song = self._selected_song()
         folder = self._selected_folder()
         if song is None and folder is None:
@@ -429,47 +463,72 @@ class MainWindow(QMainWindow):
         self._refresh_library()
 
     def _delete_selected(self) -> None:
-        song = self._selected_song()
-        if song is None:
+        songs = self._selected_songs()
+        if not songs:
             return
+        what = self._names(songs)
         # Asked for even though the Trash can give it back, because Delete sits
-        # one row under Rename in the menu and one key from the arrows that
-        # move the selection. The cost of the question is a keystroke; the cost
-        # of not asking is going to look for a song that is not there any more.
-        if QMessageBox.question(
+        # one row under Rename in the menu. The cost of the question is a
+        # keystroke; the cost of not asking is going to look for a song that is
+        # not there any more.
+        if not self._ask(f"Move {what} to the Trash?"):
+            return
+
+        moved, stuck = [], []
+        for song in songs:
+            if trashed(QFile.moveToTrash(str(song))):
+                moved.append(song)
+                self._file_moved(song, None)
+            else:
+                stuck.append(song)
+        if moved:
+            self.log("info", f"{self._names(moved)} moved to the Trash.")
+
+        # A Trash belongs to the volume, and a drive formatted for Windows, or
+        # mounted without room for one, simply has not got one. Deleting for
+        # good is a different question, so it is asked - once for the lot of
+        # them rather than once each.
+        if stuck:
+            it, them = ("they are", "them") if len(stuck) > 1 else ("it is", "it")
+            if self._ask(
+                f"{self._names(stuck)} cannot be moved to the Trash - the "
+                f"drive {it} on has nowhere to put {them}.\n\n"
+                f"Delete permanently instead?"
+            ):
+                gone = 0
+                for song in stuck:
+                    try:
+                        song.unlink()
+                    except OSError as exc:
+                        self.log("error", f"Could not delete {song.name}: "
+                                          f"{exc.strerror or exc}")
+                        continue
+                    gone += 1
+                    self._file_moved(song, None)
+                if gone:
+                    self.log("warning",
+                             f"Deleted {gone} songs permanently." if gone > 1
+                             else f"Deleted {stuck[0].name} permanently.")
+        self._refresh_library()
+
+    @staticmethod
+    def _names(songs) -> str:
+        """One song by name, several by how many there are."""
+        return songs[0].name if len(songs) == 1 else f"{len(songs)} songs"
+
+    def _ask(self, question: str) -> bool:
+        """A yes/no that answers no when dismissed rather than answered.
+
+        Enter and space are how a dialog opened by accident gets closed, so
+        they must not be the ones that delete anything.
+        """
+        return QMessageBox.question(
             self,
             "Delete",
-            f"Move {song.name} to the Trash?",
+            question,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            # Answering by reflex says no. Enter and space are how a dialog you
-            # did not mean to open gets dismissed.
             QMessageBox.StandardButton.No,
-        ) != QMessageBox.StandardButton.Yes:
-            return
-        if not trashed(QFile.moveToTrash(str(song))):
-            # A Trash is a property of the volume, and a drive formatted for
-            # Windows, or mounted without room for one, simply has not got one.
-            # Deleting for good is a different question, so it gets asked.
-            answer = QMessageBox.question(
-                self,
-                "Delete",
-                f"{song.name} cannot be moved to the Trash - the drive it is "
-                f"on has nowhere to put it.\n\nDelete it permanently instead?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-            try:
-                song.unlink()
-            except OSError as exc:
-                QMessageBox.warning(self, "Delete", exc.strerror or str(exc))
-                return
-            self.log("warning", f"Deleted {song.name} permanently.")
-        else:
-            self.log("info", f"{song.name} moved to the Trash.")
-        self._file_moved(song, None)
-        self._refresh_library()
+        ) == QMessageBox.StandardButton.Yes
 
     def _file_moved(self, old: Path, new: Path) -> None:
         """Keep what points at a song pointing at it, or at nothing.

@@ -61,7 +61,13 @@ browse tree and the search results — handle files the way a file manager does.
 **Right-click** is how all of it is reached. On a song: **Rename**, **Delete**
 and **Show in folder**. On a folder: **Paste into folder** and **Show in
 folder**. The click takes the selection with it, so it acts on the row you
-clicked.
+clicked — unless that row is already part of a selection, which is left alone.
+
+**Ctrl-click and shift-click** pick out several songs at once, and then the
+only thing on the menu is **Delete N songs**: they cannot share one new name,
+and they are not all in one folder, so nothing else there would mean anything.
+Folders and headings caught up in a selection are ignored — the songs among
+them are what a delete is about.
 
 Nothing appears that cannot be used. Pasting is something you do to a folder,
 so it is not offered on a song that happens to sit in one — and it is absent
@@ -74,9 +80,10 @@ file manager binds, but this list is a thing you arrow around while looking for
 something to play — and a key that changes files, sitting among the keys that
 only move the cursor, is a key that eventually gets pressed by accident.
 
-**Delete** asks first, then sends the song to the Trash, and the answer
-defaults to no. If the drive it lives on has no Trash — a disk formatted for
-Windows generally hasn't — it says so and asks again before deleting for good.
+**Delete** asks first, then sends the songs to the Trash, and the answer
+defaults to no. If the drive they live on has no Trash — a disk formatted for
+Windows generally hasn't — it says so and asks again before deleting for good,
+once for the lot of them rather than once each.
 
 **Rename** keeps the `.mid` extension whatever you type: a song renamed to
 something the pane filters out would simply vanish, which reads as having
