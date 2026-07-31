@@ -76,6 +76,32 @@ def copy_into(sources, folder) -> tuple:
     return copied, failed
 
 
+def move_into(sources, folder) -> tuple:
+    """Move files into a folder. Returns (what moved, what failed and why).
+
+    Each move comes back as a (was, is now) pair, because a song that has moved
+    is still the song that was open a moment ago and whatever was pointing at
+    it needs to follow.
+
+    A song already in that folder is passed over. Moving it would land on its
+    own name, and a name already taken becomes a copy - so it would quietly
+    duplicate the song rather than move it anywhere.
+    """
+    folder = Path(folder)
+    moved, failed = [], []
+    for source in sources:
+        source = Path(source)
+        if source.parent == folder:
+            continue
+        try:
+            target = unique_name(folder, source.name)
+            shutil.move(str(source), str(target))
+            moved.append((source, target))
+        except OSError as exc:
+            failed.append((source, exc.strerror or str(exc)))
+    return moved, failed
+
+
 def rename_target(path, typed: str) -> tuple:
     """Where renaming `path` to `typed` would put it, or (None, why not).
 

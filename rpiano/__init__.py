@@ -201,4 +201,12 @@
 # anything. A right-click inside a selection leaves it alone, and one outside
 # starts a new one - otherwise choosing seven songs and right-clicking any of
 # them would throw six of them away.
-__version__ = "1.16.0"
+#
+# 1.17.0 moves songs between folders. Pick out the songs and the folder to send
+# them to, right-click either, and the menu offers it - which is the last thing
+# the pane could not do to a library, and does it without dragging inside the
+# list, where an accidental tug would relocate a song silently. The menu now
+# also asks what was clicked rather than only what is selected: with a folder
+# and some songs picked out together, clicking the folder and clicking a song
+# are two different questions and were getting one answer.
+__version__ = "1.17.0"

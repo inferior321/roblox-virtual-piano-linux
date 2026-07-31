@@ -97,6 +97,7 @@ from .player import (
 from .library import (
     copy_into,
     is_midi,
+    move_into,
     trashed,
     parse_clipboard,
     rename_target,
@@ -347,6 +348,39 @@ class MainWindow(QMainWindow):
                     found.append(path)
         return found
 
+    def _selected_folders(self) -> list:
+        """Every folder picked out. The mirror of the songs, for moving into."""
+        found = []
+        if self.library_stack.currentWidget() is self.tree:
+            seen = set()
+            for index in self.tree.selectionModel().selectedIndexes():
+                if index.column():
+                    continue
+                path = Path(self.fs_model.filePath(index))
+                if path not in seen and path.is_dir():
+                    seen.add(path)
+                    found.append(path)
+        else:
+            for item in self.results.selectedItems():
+                stored = item.data(0, Qt.ItemDataRole.UserRole)
+                if stored and Path(stored).is_dir():
+                    found.append(Path(stored))
+        return found
+
+    def _row_path(self, view, pos) -> Path:
+        """The file or folder the pointer is actually over, whatever is picked.
+
+        The menu asks what was clicked as well as what is selected: with a
+        folder and some songs picked out together, clicking the folder and
+        clicking a song are two different questions.
+        """
+        if view is self.tree:
+            index = view.indexAt(pos)
+            return Path(self.fs_model.filePath(index)) if index.isValid() else None
+        item = view.itemAt(pos)
+        stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        return Path(stored) if stored else None
+
     def _selected_song(self) -> Path:
         """The one song picked out, or None if it is not exactly one."""
         songs = self._selected_songs()
@@ -398,46 +432,72 @@ class MainWindow(QMainWindow):
             item = view.itemAt(pos)
             if item is not None and not item.isSelected():
                 view.setCurrentItem(item)
+        clicked = self._row_path(view, pos)
         songs = self._selected_songs()
-        if len(songs) > 1:
-            # Nothing else on the menu means anything for a handful at once:
-            # they cannot share one name, and they are not all in one folder.
-            menu = QMenu(self)
-            menu.addAction(
-                f"Delete {len(songs)} songs", self._delete_selected
-            )
-            menu.exec(view.viewport().mapToGlobal(pos))
-            return
-        song = self._selected_song()
-        folder = self._selected_folder()
-        if song is None and folder is None:
-            return
+        folders = self._selected_folders()
+        # Moving needs one folder to move into and at least one song that is
+        # not already sitting in it. Two folders is not an answer to "where",
+        # and a song already there has nowhere to go.
+        target = folders[0] if len(folders) == 1 else None
+        travelling = [s for s in songs if target and s.parent != target]
+
         menu = QMenu(self)
-        if song is not None:
-            menu.addAction("Rename…", self._rename_selected)
-            menu.addAction("Delete", self._delete_selected)
-            menu.addSeparator()
-        elif folder is not None:
-            # Pasting is something you do to a folder, so it is offered on one
-            # and not on a song that happens to sit in one. And only when there
-            # is something to paste: an entry that can never be chosen is a
-            # line to read past every time the menu opens.
+        if clicked is not None and clicked.is_dir():
+            if travelling:
+                menu.addAction(
+                    f"Move {self._names(travelling)} to the selected folder",
+                    lambda t=target: self._move_selected(t),
+                )
             _action, waiting = self._clipboard_files()
             # At least one thing on the clipboard has to be a song. A folder of
             # holiday photos on the clipboard is not something this can paste,
             # so offering to would be offering to do nothing.
             if any(is_midi(item) for item in waiting):
                 menu.addAction(
-                    "Paste into folder", lambda f=folder: self._paste_into(f)
+                    "Paste into folder", lambda f=clicked: self._paste_into(f)
                 )
-        if folder is not None:
             menu.addAction(
                 "Show in folder",
-                lambda f=folder: QDesktopServices.openUrl(
+                lambda f=clicked: QDesktopServices.openUrl(
                     QUrl.fromLocalFile(str(f))
                 ),
             )
-        menu.exec(view.viewport().mapToGlobal(pos))
+        elif songs:
+            if len(songs) == 1:
+                menu.addAction("Rename…", self._rename_selected)
+            if travelling:
+                menu.addAction(
+                    f"Move {self._names(travelling)} to the selected folder",
+                    lambda t=target: self._move_selected(t),
+                )
+            menu.addAction(
+                "Delete" if len(songs) == 1 else f"Delete {len(songs)} songs",
+                self._delete_selected,
+            )
+            if len(songs) == 1:
+                menu.addSeparator()
+                menu.addAction(
+                    "Show in folder",
+                    lambda f=songs[0].parent: QDesktopServices.openUrl(
+                        QUrl.fromLocalFile(str(f))
+                    ),
+                )
+        if menu.actions():
+            menu.exec(view.viewport().mapToGlobal(pos))
+
+    def _move_selected(self, target: Path) -> None:
+        songs = [s for s in self._selected_songs() if s.parent != target]
+        if not songs:
+            return
+        moved, failed = move_into(songs, target)
+        for source, why in failed:
+            self.log("error", f"Could not move {source.name}: {why}")
+        for was, now in moved:
+            self._file_moved(was, now)
+        if moved:
+            self.log("info", f"Moved {self._names([now for _was, now in moved])} "
+                             f"into {target.name}.")
+            self._refresh_library()
 
     def _rename_selected(self) -> None:
         song = self._selected_song()

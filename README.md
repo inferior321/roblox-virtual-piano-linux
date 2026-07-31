@@ -63,11 +63,17 @@ and **Show in folder**. On a folder: **Paste into folder** and **Show in
 folder**. The click takes the selection with it, so it acts on the row you
 clicked — unless that row is already part of a selection, which is left alone.
 
-**Ctrl-click and shift-click** pick out several songs at once, and then the
-only thing on the menu is **Delete N songs**: they cannot share one new name,
-and they are not all in one folder, so nothing else there would mean anything.
-Folders and headings caught up in a selection are ignored — the songs among
-them are what a delete is about.
+**Ctrl-click and shift-click** pick out several songs at once. The menu then
+drops **Rename** and **Show in folder**, which mean nothing for a handful:
+several songs cannot share one new name, and they are not all in one folder.
+
+**Moving songs between folders** is done by picking out the songs *and* the
+folder to send them to, then right-clicking either — the menu gains **Move N
+songs to the selected folder**. It needs exactly one folder in the selection,
+since two is not an answer to "where", and it is absent when every song picked
+out is already in that folder. This is the only way to move a song inside the
+library: dragging within the pane deliberately does nothing, so nothing gets
+relocated by an accidental tug on the list.
 
 Nothing appears that cannot be used. Pasting is something you do to a folder,
 so it is not offered on a song that happens to sit in one — and it is absent

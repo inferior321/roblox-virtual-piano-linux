@@ -1142,6 +1142,7 @@ check("looseness is capped at what a person could plausibly do",
 import tempfile
 from rpiano.library import (
     copy_into,
+    move_into,
     parse_clipboard,
     rename_target,
     split_midi,
@@ -1176,6 +1177,40 @@ check("copying in never overwrites what is already there",
       not failed and landed[0].name == "song (copy 2).mid"
       and (sandbox / "song.mid").read_bytes() == b"x",
       landed[0].name if landed else str(failed))
+
+# Moving is not copying: the song has to stop being where it was. It also comes
+# back as (was, is now) pairs, because a song that has moved is still the song
+# that was open a moment ago and whatever points at it has to follow.
+here = sandbox / "here"
+there = sandbox / "there"
+here.mkdir()
+there.mkdir()
+(here / "a.mid").write_bytes(b"1")
+(here / "b.mid").write_bytes(b"2")
+(there / "b.mid").write_bytes(b"3")
+pairs, trouble = move_into([here / "a.mid", here / "b.mid"], there)
+check("moving takes the song out of where it was",
+      not trouble and not (here / "a.mid").exists() and not (here / "b.mid").exists(),
+      str(sorted(p.name for p in here.iterdir())))
+check("and puts it where it was sent",
+      sorted(p.name for p in there.iterdir())
+      == ["a.mid", "b (copy).mid", "b.mid"],
+      str(sorted(p.name for p in there.iterdir())))
+check("a name already taken is renamed rather than overwritten",
+      (there / "b.mid").read_bytes() == b"3"
+      and (there / "b (copy).mid").read_bytes() == b"2")
+check("and it says where each one went",
+      [(was.name, now.name) for was, now in pairs]
+      == [("a.mid", "a.mid"), ("b.mid", "b (copy).mid")],
+      str([(w.name, n.name) for w, n in pairs]))
+
+# A song already in the folder it is being sent to has nowhere to go, and
+# moving it onto its own name would land on a collision and duplicate it.
+staying, _ = move_into([there / "a.mid"], there)
+check("a song already in the target folder is left alone",
+      staying == [] and sorted(p.name for p in there.iterdir())
+      == ["a.mid", "b (copy).mid", "b.mid"],
+      str(sorted(p.name for p in there.iterdir())))
 
 for typed, expected in (("", None), ("  ", None), ("bad/name", None),
                         ("..", None), ("song", None), ("new", "new.mid"),
