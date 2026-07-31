@@ -127,6 +127,31 @@ def rename_target(path, typed: str) -> tuple:
     return target, ""
 
 
+def folder_target(parent, typed: str) -> tuple:
+    """Where a new folder called `typed` would go, or (None, why not).
+
+    Nearly the rename rules, minus the extension: a folder has none. The one
+    addition is the leading dot, which the library skips when it scans and the
+    tree does not list - so a folder named that way would be created, and then
+    never seen again.
+    """
+    parent = Path(parent)
+    wanted = (typed or "").strip()
+    if not wanted:
+        return None, "A name cannot be empty."
+    if FORBIDDEN & set(wanted):
+        return None, "A name cannot contain \\ or /."
+    if wanted in (".", ".."):
+        return None, "That is not a name."
+    if wanted.startswith("."):
+        return None, ("A name starting with a dot is hidden, so the folder "
+                      "would not show up here.")
+    target = parent / wanted
+    if target.exists():
+        return None, f"There is already a {wanted} in that folder."
+    return target, ""
+
+
 def trashed(result) -> bool:
     """Did a QFile.moveToTrash call actually work?
 

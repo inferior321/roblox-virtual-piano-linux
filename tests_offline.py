@@ -1142,6 +1142,7 @@ check("looseness is capped at what a person could plausibly do",
 import tempfile
 from rpiano.library import (
     copy_into,
+    folder_target,
     move_into,
     parse_clipboard,
     rename_target,
@@ -1224,6 +1225,21 @@ for typed, expected in (("", None), ("  ", None), ("bad/name", None),
 target, _ = rename_target(sandbox / "song.mid", "tune.txt")
 check("an extension the library does not list cannot be renamed onto",
       target is not None and target.name == "tune.txt.mid", str(target))
+
+# A new folder wants nearly the rename rules, minus the extension - a folder has
+# none - plus one of its own: the scan skips dot-directories and the tree does
+# not list them, so a folder named that way is made and then never seen again.
+(sandbox / "taken").mkdir()
+for typed, expected in (("", None), ("   ", None), ("bad/name", None),
+                        ("..", None), (".hidden", None), ("taken", None),
+                        ("Live sets", "Live sets")):
+    made, _why = folder_target(sandbox, typed)
+    check(f"a new folder called {typed!r} gives {expected}",
+          (made.name if made else None) == expected,
+          str(made))
+check("and a hidden name says why, rather than just refusing",
+      "hidden" in folder_target(sandbox, ".x")[1],
+      folder_target(sandbox, ".x")[1])
 
 check("a cut on the clipboard is not read as a copy",
       parse_clipboard("cut\nfile:///m/a.mid") == ("cut", [Path("/m/a.mid")]))

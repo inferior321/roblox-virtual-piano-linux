@@ -104,6 +104,7 @@ from .player import (
 )
 from .library import (
     copy_into,
+    folder_target,
     is_midi,
     move_into,
     trashed,
@@ -508,6 +509,12 @@ class MainWindow(QMainWindow):
                     f"Move {self._names(travelling)} to the selected folder",
                     lambda t=target: self._move_selected(t),
                 )
+            elif not songs:
+                # A folder picked out on its own. Making a new one inside it is
+                # the only thing there is to offer that is not about songs.
+                menu.addAction(
+                    "New folder…", lambda f=clicked: self._new_folder(f)
+                )
             _action, waiting = self._clipboard_files()
             # At least one thing on the clipboard has to be a song. A folder of
             # holiday photos on the clipboard is not something this can paste,
@@ -544,6 +551,33 @@ class MainWindow(QMainWindow):
                 )
         if menu.actions():
             menu.exec(view.viewport().mapToGlobal(pos))
+
+    def _new_folder(self, parent: Path) -> None:
+        typed, ok = QInputDialog.getText(
+            self, "New folder", f"A folder inside {parent.name}:",
+            QLineEdit.EchoMode.Normal, ""
+        )
+        if not ok:
+            return
+        target, why = folder_target(parent, typed)
+        if target is None:
+            if why:
+                QMessageBox.warning(self, "New folder", why)
+            return
+        try:
+            target.mkdir()
+        except OSError as exc:
+            QMessageBox.warning(self, "New folder", exc.strerror or str(exc))
+            return
+        self.log("info", f"Made {target.name} inside {parent.name}.")
+        self._refresh_library()
+        # Picked out where it was made, so it is already the folder songs would
+        # be pasted or moved into - which is the reason for making one.
+        if self.library_stack.currentWidget() is self.tree:
+            index = self.fs_model.index(str(target))
+            if index.isValid():
+                self.tree.setCurrentIndex(index)
+                self.tree.scrollTo(index)
 
     def _move_selected(self, target: Path) -> None:
         songs = [s for s in self._selected_songs() if s.parent != target]

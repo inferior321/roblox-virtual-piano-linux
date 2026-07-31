@@ -81,6 +81,14 @@ picking them all out again. This is the only way to move a song inside the
 library: dragging within the pane deliberately does nothing, so nothing gets
 relocated by an accidental tug on the list.
 
+**New folder** appears when nothing but a folder is picked out — right-click
+it and the same sort of box as Rename asks what to call the one to make
+inside. It refuses a name already taken, one with a slash in it, and one
+starting with a dot, since the library skips those when it scans and the tree
+does not list them: the folder would be made and then never seen again. The new
+folder is picked out as soon as it exists, so it is already the one songs would
+be pasted or moved into.
+
 Nothing appears that cannot be used. Pasting is something you do to a folder,
 so it is not offered on a song that happens to sit in one — and it is absent
 altogether unless the clipboard actually holds a song, rather than sitting

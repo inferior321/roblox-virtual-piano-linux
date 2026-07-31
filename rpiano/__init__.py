@@ -216,4 +216,11 @@
 # Choosing a second lets go of the first, so the last one clicked is where the
 # songs go - where before, two folders quietly took the Move entry off the menu
 # with nothing to say why.
-__version__ = "1.17.1"
+#
+# 1.18.0 makes folders. Right-click one with nothing else picked out and New
+# folder asks what to call the one to put inside it. It refuses a leading dot
+# as well as the usual - the library skips dot-directories when it scans and
+# the tree does not list them, so such a folder would be made and then never
+# seen again - and picks out what it made, which is already the folder songs
+# would be pasted or moved into.
+__version__ = "1.18.0"
