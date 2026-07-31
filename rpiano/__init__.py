@@ -237,4 +237,10 @@
 # song open from three folders down keeps playing and still knows where it
 # lives. The library's own folder is refused, the same as for deleting: either
 # would move the ground out from under the pane.
-__version__ = "1.20.0"
+#
+# 1.21.0 gives the empty space below the rows a menu of its own: Create
+# subfolder, made in the folder being browsed. It leaves a selection alone,
+# since the click was aimed at none of it, and the search results have no such
+# menu - hits come from all over the library, so the space around them is not
+# any one folder.
+__version__ = "1.21.0"

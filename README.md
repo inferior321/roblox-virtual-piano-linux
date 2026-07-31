@@ -83,7 +83,11 @@ relocated by an accidental tug on the list.
 
 **Create subfolder**, **Rename folder** and **Delete folder** appear when
 nothing but a folder is picked out, so they are never sitting next to the
-actions that are about songs.
+actions that are about songs. Right-clicking the **empty space** below the
+rows offers *Create subfolder* on its own, made in the folder you are
+browsing — and leaves any selection alone, since the click was not aimed at
+it. Search results come from all over the library and have no one folder
+around them, so the space there has no menu.
 
 *Create subfolder* asks what to call it in the same sort of box as Rename. It
 refuses a name already taken, one with a slash in it, and one starting with a

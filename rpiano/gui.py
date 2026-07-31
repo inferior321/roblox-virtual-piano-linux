@@ -506,7 +506,17 @@ class MainWindow(QMainWindow):
         travelling = [s for s in songs if target and s.parent != target]
 
         menu = QMenu(self)
-        if clicked is not None and clicked.is_dir():
+        if clicked is None:
+            # The space around the rows is the folder being browsed, and the
+            # only thing there is to do to a folder you are looking at from the
+            # inside is put another one in it. A selection is left alone: it
+            # took work to make and the click was not aimed at any of it.
+            if view is self.tree:
+                menu.addAction(
+                    "Create subfolder…",
+                    lambda f=self._library_root: self._new_folder(f),
+                )
+        elif clicked.is_dir():
             if travelling:
                 menu.addAction(
                     f"Move {self._names(travelling)} to the selected folder",
