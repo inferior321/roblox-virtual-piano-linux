@@ -53,6 +53,38 @@ would be nothing to search. Very large trees are scanned up to a limit rather
 than exhaustively; if that happens the Log says so and the search covers what
 was found.
 
+## Managing the library
+
+The pane is not only a list to pick from. Both ways of showing songs — the
+browse tree and the search results — handle files the way a file manager does.
+
+**Delete** sends the selected song to the Trash. No dialog, because there is
+somewhere to get it back from. If the drive it lives on has no Trash — a disk
+formatted for Windows generally hasn't — it says so and asks before deleting
+for good. The key only works with the list focused, so pressing it while typing
+in the search box does what you'd expect there and nothing to your songs.
+
+**Right-click** a song for **Rename**, **Delete** and **Show in folder**. The
+click takes the selection with it, so it acts on the row you clicked. Renaming
+keeps the `.mid` extension whatever you type: a song renamed to something the
+pane filters out would simply vanish, which reads as having deleted it.
+
+**Drag MIDI files in** from your file manager and they are copied into the
+folder you dropped on — a folder in the tree, a folder in the search results,
+or a song, which means the folder holding it. Dragging *within* the pane does
+nothing, so a song cannot be relocated by an accidental tug on the list.
+Anything that isn't a MIDI file is ignored, and the Log says which.
+
+**Ctrl+V** pastes files copied in your file manager into the selected folder.
+A **cut** is honoured as a cut — the marker saying which lives in a clipboard
+entry of its own, and reading only the file list would quietly turn your cut
+into a copy and leave the original where it was.
+
+A name that is already taken becomes `song (copy).mid` rather than overwriting
+anything or asking. Folders are left alone throughout: they can be dropped and
+pasted into, but not renamed or deleted, so a stray keypress cannot take a
+hundred songs with it.
+
 ## Hearing it without the game
 
 **audio preview** is a fourth entry in **Send keys via** (Input tab). Choosing

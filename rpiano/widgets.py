@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -18,9 +19,13 @@ from PyQt6.QtWidgets import (
     QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
+    QTreeView,
+    QTreeWidget,
     QVBoxLayout,
     QWidget,
 )
+
+from pathlib import Path
 
 from . import theme
 from .layouts import KeyStroke, Layout, note_name
@@ -41,6 +46,101 @@ WHITE_NOTES = tuple(n for n in range(LOWEST, HIGHEST + 1) if is_white(n))
 BLACK_NOTES = tuple(n for n in range(LOWEST, HIGHEST + 1) if not is_white(n))
 WHITE_INDEX = {note: index for index, note in enumerate(WHITE_NOTES)}
 MIDDLE_C_INDEX = WHITE_INDEX.get(60)
+
+
+class _MidiDrops:
+    """Takes MIDI files dragged in from a file manager, for the library views.
+
+    Only from outside. Dragging inside the pane is not a way to move a song
+    around, so nothing here starts a drag and one that started here is refused
+    - a song cannot be relocated, or lost, by an accidental tug on the list.
+
+    A drag carrying anything at all is accepted, rather than only one carrying
+    MIDI files. Refusing at the door leaves a "no" cursor and no reason for it;
+    accepting and then saying in the Log what was ignored is an answer.
+    """
+
+    filesDropped = pyqtSignal(list, str)
+
+    def enable_drops(self) -> None:
+        self.setAcceptDrops(True)
+        self.setDragEnabled(False)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.setDropIndicatorShown(True)
+
+    def folder_at(self, pos) -> str:
+        """The folder a drop at this point belongs in, or "" for nowhere."""
+        raise NotImplementedError
+
+    def _wanted(self, event) -> bool:
+        return event.source() is None and event.mimeData().hasUrls()
+
+    def dragEnterEvent(self, event) -> None:
+        if self._wanted(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if self._wanted(event) and self.folder_at(event.position().toPoint()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        folder = self.folder_at(event.position().toPoint())
+        if not self._wanted(event) or not folder:
+            event.ignore()
+            return
+        urls = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if urls:
+            self.filesDropped.emit(urls, folder)
+        event.acceptProposedAction()
+
+
+class LibraryTree(_MidiDrops, QTreeView):
+    """The browse tree, with somewhere for a dragged-in file to land."""
+
+    filesDropped = pyqtSignal(list, str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.enable_drops()
+
+    def folder_at(self, pos) -> str:
+        index = self.indexAt(pos)
+        if not index.isValid():
+            # The empty space below the rows is still the folder being browsed.
+            index = self.rootIndex()
+            if not index.isValid():
+                return ""
+        path = Path(self.model().filePath(index))
+        return str(path if path.is_dir() else path.parent)
+
+
+class LibraryResults(_MidiDrops, QTreeWidget):
+    """The search results, which are real folders and real files too."""
+
+    filesDropped = pyqtSignal(list, str)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.enable_drops()
+
+    def folder_at(self, pos) -> str:
+        item = self.itemAt(pos)
+        if item is None:
+            # A list of results from all over the library has no one folder,
+            # so the space around them is not anywhere to put a file.
+            return ""
+        kind = item.data(0, SearchResultDelegate.KIND_ROLE)
+        if kind == SearchResultDelegate.HEADER:
+            return ""
+        stored = item.data(0, Qt.ItemDataRole.UserRole)
+        if not stored:
+            return ""
+        path = Path(stored)
+        return str(path if path.is_dir() else path.parent)
 
 
 class WrappedLabel(QLabel):

@@ -3,7 +3,9 @@
 Run with:  ./venv/bin/python tests_offline.py
 """
 
+import shutil
 import time
+from pathlib import Path
 from dataclasses import dataclass
 
 from rpiano.backends import Backend, BackendError
@@ -1134,6 +1136,78 @@ hz_player.stop()
 check("looseness is capped at what a person could plausibly do",
       MAX_TIMING_MS <= 50 and MAX_ROLL_MS <= 60,
       f"timing {MAX_TIMING_MS}ms, roll {MAX_ROLL_MS}ms")
+
+# ------------------------------------------------------ MANAGING THE FILES
+
+import tempfile
+from rpiano.library import (
+    copy_into,
+    parse_clipboard,
+    rename_target,
+    split_midi,
+    trashed,
+    unique_name,
+    uris_to_paths,
+)
+
+# PyQt hands back Qt's out-parameter beside the answer, so a moveToTrash call
+# returns (worked, where it went) - and every two-item tuple is truthy. Read as
+# a bool, a drive with no Trash reports the file gone with the file still
+# sitting there, which is the worst way for a delete to fail.
+check("a failed move to the Trash is not read as a success",
+      trashed((False, "")) is False and trashed((True, "/x")) is True)
+check("and a plain bool still works", trashed(True) and not trashed(False))
+
+sandbox = Path(tempfile.mkdtemp())
+(sandbox / "song.mid").write_bytes(b"x")
+check("a name nothing is using is used as it is",
+      unique_name(sandbox, "other.mid").name == "other.mid")
+check("a name already taken becomes a copy beside it",
+      unique_name(sandbox, "song.mid").name == "song (copy).mid")
+(sandbox / "song (copy).mid").write_bytes(b"x")
+check("and copies keep counting rather than colliding",
+      unique_name(sandbox, "song.mid").name == "song (copy 2).mid")
+
+elsewhere = sandbox / "from"
+elsewhere.mkdir()
+(elsewhere / "song.mid").write_bytes(b"y")
+landed, failed = copy_into([elsewhere / "song.mid"], sandbox)
+check("copying in never overwrites what is already there",
+      not failed and landed[0].name == "song (copy 2).mid"
+      and (sandbox / "song.mid").read_bytes() == b"x",
+      landed[0].name if landed else str(failed))
+
+for typed, expected in (("", None), ("  ", None), ("bad/name", None),
+                        ("..", None), ("song", None), ("new", "new.mid"),
+                        ("new.mid", "new.mid"), ("new.MIDI", "new.MIDI")):
+    target, _why = rename_target(sandbox / "song.mid", typed)
+    got = target.name if target else None
+    check(f"renaming to {typed!r} gives {expected}", got == expected, str(got))
+
+# A song renamed to something the pane filters out would simply disappear,
+# which reads as having been deleted.
+target, _ = rename_target(sandbox / "song.mid", "tune.txt")
+check("an extension the library does not list cannot be renamed onto",
+      target is not None and target.name == "tune.txt.mid", str(target))
+
+check("a cut on the clipboard is not read as a copy",
+      parse_clipboard("cut\nfile:///m/a.mid") == ("cut", [Path("/m/a.mid")]))
+check("and a copy is read as one",
+      parse_clipboard("copy\nfile:///m/a.mid")[0] == "copy")
+check("a plain URI list has no action but still has its files",
+      parse_clipboard("file:///m/a.mid") == ("", [Path("/m/a.mid")]))
+check("names are un-escaped on the way out of a URI",
+      uris_to_paths(["file:///m/one%20two.mid"]) == [Path("/m/one two.mid")])
+check("anything not on this machine is left alone",
+      uris_to_paths(["sftp://host/a.mid", "file://otherpc/a.mid"]) == [])
+
+songs, rest = split_midi([Path("a.mid"), Path("b.MID"), Path("c.txt"),
+                          Path("d.midi")])
+check("only MIDI files are taken from a drop",
+      [p.name for p in songs] == ["a.mid", "b.MID", "d.midi"]
+      and [p.name for p in rest] == ["c.txt"])
+
+shutil.rmtree(sandbox, ignore_errors=True)
 
 print()
 print(f"{sum(results)}/{len(results)} passed")

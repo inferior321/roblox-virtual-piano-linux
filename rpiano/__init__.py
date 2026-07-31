@@ -150,4 +150,18 @@
 # Qt grew the window to fit, leaving the window manager to find room for it.
 # Every page sits in a scroll area now, so none of them asks the window for
 # anything: the minimum height is the same on all seven and does not move.
-__version__ = "1.13.2"
+#
+# 1.14.0 makes the library pane manage songs rather than only list them:
+# Delete to the Trash, right-click to rename, drag MIDI files in from a file
+# manager, and Ctrl+V to paste. All of it in the browse tree and the search
+# results both, since a song found by searching is as much a file as one found
+# by browsing. Folders are left alone deliberately.
+#
+# Two things worth remembering from building it. A cut and a copy look
+# identical in the clipboard's file list - which is which lives in an entry of
+# its own, and reading only the list turns a cut into a copy and leaves the
+# original behind. And PyQt returns Qt's out-parameter beside the answer from
+# moveToTrash, so the result is a (worked, where it went) pair: read as a bool,
+# every two-item tuple is truthy, and a drive with no Trash reported the file
+# gone with the file still sitting there.
+__version__ = "1.14.0"

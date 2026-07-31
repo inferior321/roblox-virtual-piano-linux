@@ -9,8 +9,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QDir, QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QDir, QFile, QObject, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QShortcut
 
 try:  # Qt 6 moved this out of QtWidgets
     from PyQt6.QtGui import QFileSystemModel
@@ -29,7 +29,9 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QInputDialog,
     QLineEdit,
+    QMenu,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -91,8 +93,19 @@ from .player import (
     suggest_transpose,
     test_pattern,
 )
+from .library import (
+    copy_into,
+    is_midi,
+    trashed,
+    parse_clipboard,
+    rename_target,
+    split_midi,
+    uris_to_paths,
+)
 from .widgets import (
     ClickableLabel,
+    LibraryResults,
+    LibraryTree,
     WrappedLabel,
     KeyboardStrip,
     MappingEditor,
@@ -246,14 +259,14 @@ class MainWindow(QMainWindow):
         self.search_box.textChanged.connect(self._search_changed)
         box.addWidget(self.search_box)
 
-        self.tree = QTreeView()
+        self.tree = LibraryTree()
         self.tree.setModel(self.fs_model)
         for column in range(1, 4):
             self.tree.hideColumn(column)
         self.tree.setHeaderHidden(True)
         self.tree.doubleClicked.connect(self._tree_activated)
 
-        self.results = QTreeWidget()
+        self.results = LibraryResults()
         self.results.setHeaderHidden(True)
         self.results.setItemDelegate(SearchResultDelegate(self.results))
         # Rows differ in height - a hit is two lines, a folder one - so uniform
@@ -278,8 +291,230 @@ class MainWindow(QMainWindow):
         self.library_hint.setObjectName("Subtitle")
         box.addWidget(self.library_hint)
 
+        self._wire_file_management()
         self._set_folder(self.config.midi_folder, save=False)
         return panel
+
+    # -- managing the files, not just listing them -------------------------
+
+    def _wire_file_management(self) -> None:
+        """Delete, rename, drop and paste, on both ways of showing a song.
+
+        Every shortcut is bound to the view rather than to the window. Delete
+        on the window would fire while you were editing the search box, and
+        take the song behind it.
+        """
+        for view in (self.tree, self.results):
+            view.filesDropped.connect(self._files_dropped)
+            view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            view.customContextMenuRequested.connect(
+                lambda pos, v=view: self._library_menu(v, pos)
+            )
+            remove = QShortcut(QKeySequence.StandardKey.Delete, view)
+            remove.setContext(Qt.ShortcutContext.WidgetShortcut)
+            remove.activated.connect(self._delete_selected)
+            paste = QShortcut(QKeySequence.StandardKey.Paste, view)
+            paste.setContext(Qt.ShortcutContext.WidgetShortcut)
+            paste.activated.connect(self._paste_into_selected)
+
+    def _selected_song(self) -> Path:
+        """The song the next action applies to, or None if a row is not one."""
+        if self.library_stack.currentWidget() is self.tree:
+            index = self.tree.currentIndex()
+            if not index.isValid():
+                return None
+            path = Path(self.fs_model.filePath(index))
+            return path if path.is_file() and is_midi(path) else None
+        item = self.results.currentItem()
+        if item is None:
+            return None
+        stored = item.data(0, Qt.ItemDataRole.UserRole)
+        if not stored:
+            return None
+        path = Path(stored)
+        return path if path.is_file() and is_midi(path) else None
+
+    def _selected_folder(self) -> Path:
+        """Where a paste would go: the folder chosen, or the one holding it."""
+        if self.library_stack.currentWidget() is self.tree:
+            index = self.tree.currentIndex()
+            path = (Path(self.fs_model.filePath(index)) if index.isValid()
+                    else self._library_root)
+        else:
+            item = self.results.currentItem()
+            stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+            if not stored:
+                return None
+            path = Path(stored)
+        return path if path.is_dir() else path.parent
+
+    def _refresh_library(self) -> None:
+        """Read the library again after something on disk has changed.
+
+        The whole thing rather than a patch to the list: it takes about thirty
+        milliseconds on a library this size, and there is no version of this
+        that is wrong. The browse tree looks after itself - QFileSystemModel
+        watches the folders it is showing - but the search list is a scan taken
+        once, and would otherwise go on offering songs that are not there.
+        """
+        self._library_files, self._library_dirs, _partial = self._scan_library(
+            self._library_root
+        )
+        self.search_box.setEnabled(bool(self._library_files))
+        text = self.search_box.text()
+        if len(text.strip()) >= self.MIN_QUERY:
+            self._search_changed(text)
+
+    def _library_menu(self, view, pos) -> None:
+        # Right-clicking a row acts on that row, the way it does everywhere
+        # else, so the click takes the selection with it before the menu asks
+        # what is selected.
+        if view is self.tree:
+            index = view.indexAt(pos)
+            if index.isValid():
+                view.setCurrentIndex(index)
+        else:
+            item = view.itemAt(pos)
+            if item is not None:
+                view.setCurrentItem(item)
+        song = self._selected_song()
+        if song is None:
+            return
+        menu = QMenu(self)
+        menu.addAction("Rename…", self._rename_selected)
+        menu.addAction("Delete", self._delete_selected)
+        menu.addSeparator()
+        menu.addAction(
+            "Show in folder",
+            lambda: QDesktopServices.openUrl(
+                QUrl.fromLocalFile(str(song.parent))
+            ),
+        )
+        menu.exec(view.viewport().mapToGlobal(pos))
+
+    def _rename_selected(self) -> None:
+        song = self._selected_song()
+        if song is None:
+            return
+        typed, ok = QInputDialog.getText(
+            self, "Rename", "New name:", QLineEdit.EchoMode.Normal, song.stem
+        )
+        if not ok:
+            return
+        target, why = rename_target(song, typed)
+        if target is None:
+            if why:
+                QMessageBox.warning(self, "Rename", why)
+            return
+        try:
+            song.rename(target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Rename", exc.strerror or str(exc))
+            return
+        self._file_moved(song, target)
+        self.log("info", f"Renamed to {target.name}")
+        self._refresh_library()
+
+    def _delete_selected(self) -> None:
+        song = self._selected_song()
+        if song is None:
+            return
+        # What a file manager's Delete key does: to the Trash, and no dialog,
+        # because there is somewhere to get it back from.
+        if not trashed(QFile.moveToTrash(str(song))):
+            # A Trash is a property of the volume, and a drive formatted for
+            # Windows, or mounted without room for one, simply has not got one.
+            # Deleting for good is a different question, so it gets asked.
+            answer = QMessageBox.question(
+                self,
+                "Delete",
+                f"{song.name} cannot be moved to the Trash - the drive it is "
+                f"on has nowhere to put it.\n\nDelete it permanently instead?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                song.unlink()
+            except OSError as exc:
+                QMessageBox.warning(self, "Delete", exc.strerror or str(exc))
+                return
+            self.log("warning", f"Deleted {song.name} permanently.")
+        else:
+            self.log("info", f"{song.name} moved to the Trash.")
+        self._file_moved(song, None)
+        self._refresh_library()
+
+    def _file_moved(self, old: Path, new: Path) -> None:
+        """Keep what points at a song pointing at it, or at nothing.
+
+        A song that is playing goes on playing - its notes are already in
+        memory and have nothing to do with the file any more - but everything
+        that would go back to the file for it needs to know.
+        """
+        if self.config.last_file == str(old):
+            self.config.last_file = str(new) if new else ""
+        if self.song is not None and getattr(self.song, "path", None) == old:
+            if new is None:
+                self.log("warning",
+                         "That is the song you have open. It will play to the "
+                         "end, but there is nothing to load it from again.")
+            else:
+                self.song.path = new
+                self.title_label.setText(new.stem)
+
+    def _files_dropped(self, paths, folder: str) -> None:
+        songs, rest = split_midi([Path(p) for p in paths if p])
+        self._copy_in(songs, rest, Path(folder), "Dropped")
+
+    def _paste_into_selected(self) -> None:
+        folder = self._selected_folder()
+        if folder is None:
+            self.log("info", "Choose a folder to paste into first.")
+            return
+        clip = QApplication.clipboard().mimeData()
+        action, files = "", []
+        if clip.hasFormat("x-special/gnome-copied-files"):
+            action, files = parse_clipboard(
+                bytes(clip.data("x-special/gnome-copied-files")).decode(
+                    "utf-8", "replace"
+                )
+            )
+        elif clip.hasUrls():
+            files = [Path(u.toLocalFile()) for u in clip.urls() if u.isLocalFile()]
+        if not files:
+            self.log("info", "There are no files on the clipboard.")
+            return
+        songs, rest = split_midi(files)
+        copied = self._copy_in(songs, rest, folder, "Pasted")
+        if action == "cut" and copied:
+            for source in songs:
+                try:
+                    source.unlink()
+                except OSError as exc:
+                    self.log("warning",
+                             f"Copied {source.name}, but could not remove the "
+                             f"original: {exc.strerror or exc}")
+            self._refresh_library()
+
+    def _copy_in(self, songs, rest, folder: Path, verb: str) -> list:
+        if rest:
+            names = ", ".join(p.name for p in rest[:3])
+            more = f" and {len(rest) - 3} more" if len(rest) > 3 else ""
+            self.log("warning",
+                     f"Ignored {names}{more}: the library holds MIDI files.")
+        if not songs:
+            return []
+        copied, failed = copy_into(songs, folder)
+        for source, why in failed:
+            self.log("error", f"Could not copy {source.name}: {why}")
+        if copied:
+            names = ", ".join(p.name for p in copied[:3])
+            more = f" and {len(copied) - 3} more" if len(copied) > 3 else ""
+            self.log("info", f"{verb} {names}{more} into {folder.name}.")
+            self._refresh_library()
+        return copied
 
     def _build_main(self) -> QWidget:
         panel = QWidget()

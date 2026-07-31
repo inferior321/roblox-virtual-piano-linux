@@ -71,16 +71,36 @@ INHERITED_OK = {
     "setObjectName", "setWordWrap", "setText", "text", "setEnabled",
     "setWindowFlag", "setWindowOpacity", "windowFlags", "statusBar",
     "setCursor", "setToolTip", "heightForWidth",
+    "setAcceptDrops", "setDragEnabled", "setDragDropMode",
+    "setDropIndicatorShown", "indexAt", "itemAt", "model", "rootIndex",
 }
 
 for path in sorted(PACKAGE.glob("*.py")):
     tree = ast.parse(path.read_text(), filename=str(path))
     globals_here = module_names(tree) | set(dir(builtins))
 
+    classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
+
+    def inherited(cls, seen=None):
+        """Attributes from base classes written in this same file.
+
+        A mixin's methods belong to the class that mixes it in, and without
+        this every call to one reads as a typo - which is the sort of noise
+        that gets a checker switched off rather than fixed.
+        """
+        seen = seen or set()
+        found = set()
+        for base in cls.bases:
+            name = base.id if isinstance(base, ast.Name) else None
+            if name in classes and name not in seen:
+                seen.add(name)
+                found |= class_attrs(classes[name]) | inherited(classes[name], seen)
+        return found
+
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
-        defined = class_attrs(node) | INHERITED_OK
+        defined = class_attrs(node) | inherited(node) | INHERITED_OK
         for attr in sorted(class_reads(node) - defined):
             problems.append(f"{path}:{node.name}: self.{attr} is read but never assigned")
 
