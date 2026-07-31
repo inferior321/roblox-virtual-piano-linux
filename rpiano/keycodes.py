@@ -1,13 +1,9 @@
 """Keyboard code tables.
 
-Two backends need two different names for the same physical key:
-
-  * the uinput backend needs the kernel scancode from input-event-codes.h
-  * the xdotool backend needs an X11 keysym name
-
 Everything in this project refers to a physical key by its *unshifted US QWERTY
-character* ("t", "5") plus a list of modifiers (["shift"]). These tables convert
-that into whatever the backend wants.
+character* ("t", "5") plus a list of modifiers (["shift"]). The uinput backend
+wants the kernel scancode from input-event-codes.h instead, and this is where
+the one becomes the other.
 """
 
 # --- Kernel scancodes (linux/input-event-codes.h) --------------------------
@@ -41,28 +37,6 @@ MOD_TO_SCANCODE = {
     "ctrl": KEY_LEFTCTRL,
     "alt": KEY_LEFTALT,
 }
-
-# --- X11 keysym names (for xdotool) ---------------------------------------
-
-CHAR_TO_KEYSYM = {
-    "-": "minus", "=": "equal",
-    "[": "bracketleft", "]": "bracketright",
-    ";": "semicolon", "'": "apostrophe", "`": "grave",
-    "\\": "backslash", ",": "comma", ".": "period", "/": "slash",
-    " ": "space",
-}
-
-MOD_TO_KEYSYM = {
-    "shift": "shift",
-    "ctrl": "ctrl",
-    "alt": "alt",
-}
-
-
-def keysym_for(char: str) -> str:
-    """X11 keysym name for an unshifted QWERTY character."""
-    return CHAR_TO_KEYSYM.get(char, char)
-
 
 def scancode_for(char: str) -> int:
     """Kernel scancode for an unshifted QWERTY character."""

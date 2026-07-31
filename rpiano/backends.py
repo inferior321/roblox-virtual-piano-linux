@@ -10,9 +10,9 @@ It's written against the raw ioctl interface with fcntl and struct rather than
 the python-evdev package, so there is nothing to compile and no system package
 to install - the venv stays disposable.
 
-xdotool is the fallback. It's X11-only, it shells out once per event so the
-timing is noticeably worse, and Roblox may ignore it entirely. Useful mainly
-for checking that the rest of the program works.
+The other three send nothing to the system: the dry run logs what it would have
+typed, and the audio preview reads the keystrokes back through the layout and
+plays them, so a mapping can be heard without the game.
 """
 
 from __future__ import annotations
@@ -30,11 +30,9 @@ from pathlib import Path
 from .keycodes import (
     EV_KEY,
     EV_SYN,
-    MOD_TO_KEYSYM,
     MOD_TO_SCANCODE,
     SYN_REPORT,
     all_scancodes,
-    keysym_for,
     scancode_for,
 )
 
@@ -248,71 +246,6 @@ class UinputBackend(Backend):
             self._sync()
         except (OSError, BackendError):
             pass
-        self._down.clear()
-        self._mods_down.clear()
-
-
-class XdotoolBackend(Backend):
-    """Fallback that shells out to xdotool. X11 only, and slower."""
-
-    name = "xdotool"
-    description = "X11 only. Spawns a process per event, so timing is loose."
-
-    def __init__(self):
-        self._down = set()
-        self._mods_down = set()
-
-    @staticmethod
-    def availability() -> tuple:
-        if shutil.which("xdotool") is None:
-            return False, "xdotool is not installed. sudo apt install xdotool"
-        if not os.environ.get("DISPLAY"):
-            return False, "No DISPLAY set, so this is not an X11 session."
-        return True, "Ready."
-
-    def open(self) -> None:
-        ok, message = self.availability()
-        if not ok:
-            raise BackendError(message)
-
-    def close(self) -> None:
-        self.release_all()
-
-    def _run(self, action: str, spec: str) -> None:
-        subprocess.run(
-            ["xdotool", action, spec],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    def key_down(self, char: str) -> None:
-        spec = keysym_for(char)
-        self._run("keydown", spec)
-        self._down.add(spec)
-
-    def key_up(self, char: str) -> None:
-        spec = keysym_for(char)
-        self._run("keyup", spec)
-        self._down.discard(spec)
-
-    def mods_down(self, mods) -> None:
-        for mod in mods:
-            spec = MOD_TO_KEYSYM.get(mod)
-            if spec:
-                self._run("keydown", spec)
-                self._mods_down.add(spec)
-
-    def mods_up(self, mods) -> None:
-        for mod in reversed(list(mods)):
-            spec = MOD_TO_KEYSYM.get(mod)
-            if spec:
-                self._run("keyup", spec)
-                self._mods_down.discard(spec)
-
-    def release_all(self) -> None:
-        for spec in list(self._down) + list(self._mods_down):
-            self._run("keyup", spec)
         self._down.clear()
         self._mods_down.clear()
 
@@ -630,7 +563,6 @@ class SoundfontBackend(Backend):
 
 BACKENDS = {
     "uinput": UinputBackend,
-    "xdotool": XdotoolBackend,
     "dry run": NullBackend,
     "audio preview": SoundfontBackend,
 }

@@ -89,6 +89,11 @@ class AppConfig:
     soundfont_program: int = 0
     preview_volume: int = 40
 
+    # Watch the focused window while a song plays, and pause when it stops
+    # being the one the count-in ended on. uinput only: it is a keyboard, and
+    # what a keyboard types goes wherever the focus is.
+    lock_window: bool = False
+
     always_on_top: bool = False
     opacity: int = 100
 

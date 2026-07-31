@@ -152,6 +152,31 @@ anything or asking. Folders are left alone throughout: they can be dropped and
 pasted into, but not renamed or deleted, so a stray keypress cannot take a
 hundred songs with it.
 
+## The window lock
+
+**Pause if another window takes the focus** (Input tab) is for the accident
+where a song ends up typing into the wrong place. When the count-in ends it
+notes whichever window is in front — the game — and from then on it watches.
+The moment the focus becomes anything else, every key is released and the song
+pauses, with a line in the Log naming what took over. Press Play to carry on.
+
+It also refuses to start at all if the count-in runs out with **this** window
+still in front. That is the commonest way an autoplayer goes wrong, and it is
+the one moment where it can be caught before a single key is sent.
+
+It is worth being clear about what it does not do, because the obvious reading
+is wrong. It does not send the keys to that window. **uinput is a keyboard, not
+a message to a window** — what it types goes wherever the focus is, exactly as
+your real keyboard does, and no setting can change that. X11 does have a call
+that reaches an unfocused window, but it marks the events as synthetic and
+games and browsers ignore those on purpose, so Roblox would receive nothing.
+Watching the focus is the honest version of the idea.
+
+uinput only, for the same reason: the dry run and the audio preview send
+nothing to the system, so there is no window for their keys to land in. It
+needs X11 to ask what has the focus, the same as the global hotkeys do, and
+costs one property read sixteen times a second while a song plays.
+
 ## Hearing it without the game
 
 **audio preview** is a fourth entry in **Send keys via** (Input tab). Choosing
@@ -468,9 +493,9 @@ take their own view. That's your call; this just handles the Linux side.
 
 | File | What's in it |
 |------|--------------|
-| `rpiano/keycodes.py` | QWERTY character to kernel scancode / X11 keysym |
+| `rpiano/keycodes.py` | QWERTY character to kernel scancode |
 | `rpiano/layouts.py` | Builds the 61- and 88-key maps, custom layouts, MIDI++ import |
-| `rpiano/backends.py` | uinput virtual keyboard, xdotool fallback, dry run |
+| `rpiano/backends.py` | uinput virtual keyboard, dry run, audio preview |
 | `rpiano/midi_loader.py` | Tempo map, absolute timing, track and channel info |
 | `rpiano/player.py` | Scheduler, timing model, hold logic, transposition |
 | `rpiano/widgets.py` | Keyboard strip, mapping editor |

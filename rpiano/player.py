@@ -132,6 +132,10 @@ class Player:
         self.on_error = lambda message: None
         self.on_countdown = lambda remaining: None
         self.on_log = lambda level, message: None
+        # Asked once, after the count-in and before the first note, and a no
+        # calls the song off. It is where the window lock decides whether the
+        # keys are about to go somewhere they should not.
+        self.may_start = lambda: True
 
         self._state = IDLE
         self._lock = threading.RLock()
@@ -355,7 +359,7 @@ class Player:
                 self._wake.clear()
             self.on_countdown(0.0)
 
-        if self._should_stop:
+        if self._should_stop or not self.may_start():
             self._finish()
             return
 

@@ -256,4 +256,19 @@
 # worst of all, since it takes the songs and leaves the folder that is just as
 # clearly selected. The menu now has one rule with no exceptions: it is about
 # whichever one kind of thing is picked out, and a mixture is a move.
-__version__ = "1.21.2"
+#
+# 1.22.0 adds the window lock, and drops the xdotool backend.
+#
+# The lock cannot do what its name suggests, and the honest version is better
+# than nothing: uinput is a keyboard rather than a message to a window, so what
+# it types goes wherever the focus is and no setting can redirect it. What it
+# does instead is note the window the count-in ended on and watch: the focus
+# becoming anything else pauses the song before much of it lands somewhere it
+# should not. It also refuses to start when the count-in runs out with this
+# window still in front, which is the commonest way an autoplayer goes wrong
+# and the one moment it can be caught for free. Reading the focused window
+# costs no new dependency - python-xlib is already there for the hotkeys.
+#
+# xdotool is gone. It shelled out once per key event, so it was never usable
+# for playing anything; the keysym tables that existed only for it went too.
+__version__ = "1.22.0"

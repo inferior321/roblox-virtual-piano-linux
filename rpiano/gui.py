@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import (
     QDir,
+    QTimer,
     QFile,
     QItemSelectionModel,
     QObject,
@@ -68,12 +69,13 @@ from .backends import (
     BackendError,
     SoundfontBackend,
     UinputBackend,
-    XdotoolBackend,
     make_backend,
     read_soundfont_presets,
     soundfont_available,
 )
+from . import focus as focus_module
 from .config import LAYOUT_DIR, AppConfig
+from .focus import Focus
 from .humanize import (
     BUSIEST_RATE,
     DRIFTS,
@@ -150,6 +152,10 @@ class MainWindow(QMainWindow):
         self.layouts = builtin_layouts()
         self.layouts.update(load_custom_layouts(LAYOUT_DIR))
         self.song = None
+        # The window a running song is meant for, and the reader that says
+        # what has the focus now. None means no lock on this song.
+        self._focus = Focus()
+        self._locked_to = None
         self._seeking = False
         self._hotkeys = None
         self._solo = set()
@@ -188,6 +194,7 @@ class MainWindow(QMainWindow):
         self.player.on_error = self.bridge.error.emit
         self.player.on_countdown = self.bridge.countdown.emit
         self.player.on_log = self.bridge.log.emit
+        self.player.may_start = self._may_start
         self.bridge.state.connect(self._on_state)
         self.bridge.progress.connect(self._on_progress)
         self.bridge.finished.connect(self._on_finished)
@@ -304,6 +311,13 @@ class MainWindow(QMainWindow):
         self.library_hint = QLabel("Double-click to load")
         self.library_hint.setObjectName("Subtitle")
         box.addWidget(self.library_hint)
+
+        # Fast enough that a stray keystroke or two is the worst a wrong
+        # window ever sees, and slow enough to cost nothing: one property read
+        # on the root window, sixteen times a second.
+        self._focus_timer = QTimer(self)
+        self._focus_timer.setInterval(60)
+        self._focus_timer.timeout.connect(self._watch_focus)
 
         self._wire_file_management()
         self._set_folder(self.config.midi_folder, save=False)
@@ -1306,6 +1320,14 @@ class MainWindow(QMainWindow):
         self.backend_note.setObjectName("Subtitle")
         form.addRow("", self.backend_note)
 
+        self.lock_check = QCheckBox("Pause if another window takes the focus")
+        self.lock_check.setChecked(self.config.lock_window)
+        self.lock_check.toggled.connect(self._lock_toggled)
+        form.addRow("Window lock", self.lock_check)
+        self.lock_note = WrappedLabel("")
+        self.lock_note.setObjectName("Subtitle")
+        form.addRow("", self.lock_note)
+
         sf_row = QHBoxLayout()
         self.soundfont_button = QPushButton("Choose soundfont")
         self.soundfont_button.setToolTip(
@@ -2225,6 +2247,7 @@ class MainWindow(QMainWindow):
         self._sustain_changed()
         self.cutoff_slider.setValue(fresh.sustain_cutoff)
         self.hotkeys_check.setChecked(fresh.hotkeys_enabled)
+        self.lock_check.setChecked(fresh.lock_window)
         self.log(
             "info",
             f"Input back to defaults: {self.backend_combo.currentText()}, "
@@ -2549,6 +2572,82 @@ class MainWindow(QMainWindow):
                 return
             backend.set_gain(self._preview_gain())
 
+    # -- the window lock ---------------------------------------------------
+    #
+    # uinput is a keyboard, not a message to a window: what it types goes
+    # wherever the focus is. So the lock cannot send a song anywhere. What it
+    # can do is notice the moment the focus stops being the window the song
+    # was meant for, and stop before much of it lands somewhere else.
+
+    def _lock_toggled(self, checked: bool) -> None:
+        self.config.lock_window = checked
+        self._refresh_lock_note()
+
+    def _refresh_lock_note(self) -> None:
+        ok, why = focus_module.availability()
+        self.lock_check.setEnabled(ok and self.config.backend == "uinput")
+        if not ok:
+            self.lock_note.setText(why)
+        elif self.config.backend != "uinput":
+            self.lock_note.setText(
+                "Only for uinput. The other backends send nothing to the "
+                "system, so there is no window for the keys to land in."
+            )
+        elif self.config.lock_window:
+            self.lock_note.setText(
+                "The window in front when the count-in ends is the one the "
+                "song plays into. Click away and it pauses rather than typing "
+                "into whatever you clicked; press Play to carry on."
+            )
+        else:
+            self.lock_note.setText(
+                "Off, the keys go wherever the focus is, the same as typing."
+            )
+
+    def _may_start(self) -> bool:
+        """Asked on the player thread, after the count-in, before a note.
+
+        A no calls the song off, which is what happens when the count-in runs
+        out with this program still in front - the commonest way an autoplayer
+        goes wrong, and the one moment it can be caught for free.
+        """
+        self._locked_to = None
+        if not self.config.lock_window or self.config.backend != "uinput":
+            return True
+        found = self._focus.active()
+        if found is None:
+            self.player.on_log(
+                "warning",
+                "Window lock: cannot tell what has the focus, so it is off "
+                "for this song.",
+            )
+            return True
+        if self._focus.is_ours(found):
+            self.player.on_log(
+                "error",
+                "Window lock: the count-in ended with this window still in "
+                "front, so nothing was played. Click into the game first.",
+            )
+            return False
+        self._locked_to = found
+        self.player.on_log("info", f"Window lock: playing into {found[1]!r}.")
+        return True
+
+    def _watch_focus(self) -> None:
+        """On a timer while a song runs. Pauses the moment the focus moves."""
+        if self._locked_to is None or self.player.state != PLAYING:
+            return
+        found = self._focus.active()
+        if found is None or found[0] == self._locked_to[0]:
+            return
+        self.player.pause()
+        where = found[1] or "another window"
+        self.log(
+            "warning",
+            f"Window lock: the focus moved to {where!r}, so the song is "
+            f"paused. Click back into {self._locked_to[1]!r} and press Play.",
+        )
+
     def _backend_changed(self, name: str) -> None:
         try:
             backend = make_backend(name)
@@ -2568,6 +2667,7 @@ class MainWindow(QMainWindow):
             return
         self.config.backend = name
         self._refresh_backend_status()
+        self._refresh_lock_note()
         self.log("info", f"Backend: {name}")
 
     def _refresh_backend_status(self) -> None:
@@ -2577,11 +2677,12 @@ class MainWindow(QMainWindow):
             self.backend_label.setText("no backend")
             self.backend_label.setStyleSheet(f"color: {theme.FELT};")
             return
-        if cls in (UinputBackend, XdotoolBackend):
+        if cls is UinputBackend:
             ok, message = cls.availability()
         else:
             ok, message = True, "Nothing is sent to the system."
         self.backend_note.setText(f"{cls.description}\n{message}")
+        self._refresh_lock_note()
         self.backend_label.setText(f"{name}: {'ready' if ok else 'unavailable'}")
         self.backend_label.setStyleSheet(f"color: {theme.GREEN if ok else theme.FELT};")
         if not ok:
@@ -2749,6 +2850,14 @@ class MainWindow(QMainWindow):
         self.player.seek(fraction * self.player.song.duration)
 
     def _on_state(self, state: str) -> None:
+        # The reader is cheap, but not so cheap that it should tick all day
+        # behind a window with nothing playing.
+        if state == PLAYING:
+            self._focus_timer.start()
+        else:
+            self._focus_timer.stop()
+            if state == IDLE:
+                self._locked_to = None
         self.play_button.setText(
             self._play_labels.get(state, self._play_labels[IDLE])
         )
@@ -2989,6 +3098,7 @@ class MainWindow(QMainWindow):
         self.config.retrigger_gap_ms = self.retrigger_spin.value()
         self.config.batch_window_ms = self.batch_spin.value()
         self.config.hotkeys_enabled = self.hotkeys_check.isChecked()
+        self.config.lock_window = self.lock_check.isChecked()
         self.config.save()
         super().closeEvent(event)
 
