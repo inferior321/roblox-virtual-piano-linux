@@ -249,4 +249,11 @@
 # subfolder appear whatever was picked out, which was the one place in the pane
 # that did not follow its own rule - and with a folder highlighted it offered
 # to make one somewhere else, which is the confusion the rule is for.
-__version__ = "1.21.1"
+#
+# 1.21.2 makes a selection of songs and a folder mean one thing. It offered
+# Rename, Delete and Show in folder beside the Move - each acting on one half
+# of the selection while the other half sat highlighted next to it, and Delete
+# worst of all, since it takes the songs and leaves the folder that is just as
+# clearly selected. The menu now has one rule with no exceptions: it is about
+# whichever one kind of thing is picked out, and a mixture is a move.
+__version__ = "1.21.2"

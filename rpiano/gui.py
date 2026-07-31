@@ -499,48 +499,45 @@ class MainWindow(QMainWindow):
         clicked = self._row_path(view, pos)
         songs = self._selected_songs()
         folders = self._selected_folders()
-        # Moving needs one folder to move into and at least one song that is
-        # not already sitting in it. Two folders is not an answer to "where",
-        # and a song already there has nowhere to go.
         target = folders[0] if len(folders) == 1 else None
         travelling = [s for s in songs if target and s.parent != target]
 
         menu = QMenu(self)
-        if clicked is None:
+        if songs and folders:
+            # Songs and somewhere to put them: the selection is a move waiting
+            # to happen, so that is the only thing the menu says, on the folder
+            # and on the songs alike. Everything else here acts on one of the
+            # two and leaves the other sitting highlighted beside it - which is
+            # confusing for Rename and Show in folder, and for Delete is an
+            # invitation to misread which of them is about to go.
+            if travelling:
+                menu.addAction(
+                    f"Move {self._names(travelling)} to the selected folder",
+                    lambda t=target: self._move_selected(t),
+                )
+        elif clicked is None:
             # The space around the rows is the folder being browsed, and the
             # only thing there is to do to a folder you are looking at from the
-            # inside is put another one in it.
-            #
-            # Only with nothing picked out, though, which is the same rule the
-            # folder rows follow: an action about a folder is offered when a
-            # folder is all there is. With songs picked out this would sit
-            # beside a selection it has nothing to do with, and with a folder
-            # picked out it would make one somewhere other than the folder that
-            # is highlighted - which is the confusion the rule is for.
+            # inside is put another one in it. Only with nothing picked out,
+            # which is the rule every row here follows: an action about a
+            # folder is offered when a folder is all there is.
             if view is self.tree and not songs and not folders:
                 menu.addAction(
                     "Create subfolder…",
                     lambda f=self._library_root: self._new_folder(f),
                 )
         elif clicked.is_dir():
-            if travelling:
-                menu.addAction(
-                    f"Move {self._names(travelling)} to the selected folder",
-                    lambda t=target: self._move_selected(t),
-                )
-            elif not songs:
-                # A folder picked out on its own, so the menu is about the
-                # folder itself rather than about anything in it.
-                menu.addAction(
-                    "Create subfolder…", lambda f=clicked: self._new_folder(f)
-                )
-                menu.addAction(
-                    "Rename folder…", lambda f=clicked: self._rename_folder(f)
-                )
-                menu.addAction(
-                    "Delete folder", lambda f=clicked: self._delete_folder(f)
-                )
-                menu.addSeparator()
+            # A folder and nothing else, so the menu is about the folder.
+            menu.addAction(
+                "Create subfolder…", lambda f=clicked: self._new_folder(f)
+            )
+            menu.addAction(
+                "Rename folder…", lambda f=clicked: self._rename_folder(f)
+            )
+            menu.addAction(
+                "Delete folder", lambda f=clicked: self._delete_folder(f)
+            )
+            menu.addSeparator()
             _action, waiting = self._clipboard_files()
             # At least one thing on the clipboard has to be a song. A folder of
             # holiday photos on the clipboard is not something this can paste,
@@ -556,13 +553,9 @@ class MainWindow(QMainWindow):
                 ),
             )
         elif songs:
+            # Songs and nothing else, so the menu is about the songs.
             if len(songs) == 1:
                 menu.addAction("Rename…", self._rename_selected)
-            if travelling:
-                menu.addAction(
-                    f"Move {self._names(travelling)} to the selected folder",
-                    lambda t=target: self._move_selected(t),
-                )
             menu.addAction(
                 "Delete" if len(songs) == 1 else f"Delete {len(songs)} songs",
                 self._delete_selected,

@@ -68,9 +68,13 @@ drops **Rename** and **Show in folder**, which mean nothing for a handful:
 several songs cannot share one new name, and they are not all in one folder.
 
 **Moving songs between folders** is done by picking out the songs *and* the
-folder to send them to, then right-clicking either — the menu gains **Move N
-songs to the selected folder**. It is absent when every song picked out is
-already in that folder.
+folder to send them to, then right-clicking either — the menu offers **Move N
+songs to the selected folder**, and nothing else at all. A selection of songs
+and somewhere to put them is a move waiting to happen, so that is the only
+thing the menu says: anything else would act on one half of it and leave the
+other half highlighted beside it, which for *Delete* is an invitation to
+misread which of them is about to go. When every song picked out is already in
+that folder there is nothing to move, and no menu.
 
 Songs add up as you pick them, but **only ever one folder is held at a time**:
 choosing a second lets go of the first, so the last one clicked is where the
