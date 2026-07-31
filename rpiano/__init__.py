@@ -223,4 +223,11 @@
 # the tree does not list them, so such a folder would be made and then never
 # seen again - and picks out what it made, which is already the folder songs
 # would be pasted or moved into.
-__version__ = "1.18.0"
+#
+# 1.19.0 deletes folders, and renames New folder to Create subfolder. A folder
+# delete takes everything under it, so the question says how much that is,
+# counted all the way down - the part nobody has in mind is what is nested
+# deeper than they were thinking about. The Trash takes a folder whole with its
+# contents intact, so it can be put back; the folder the library is showing is
+# refused, since deleting it would leave the pane looking at nothing.
+__version__ = "1.19.0"

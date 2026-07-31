@@ -12,6 +12,7 @@ to reach the Trash, so it stays where Qt already is.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -150,6 +151,22 @@ def folder_target(parent, typed: str) -> tuple:
     if target.exists():
         return None, f"There is already a {wanted} in that folder."
     return target, ""
+
+
+def folder_contents(folder) -> tuple:
+    """(songs, other files) anywhere below a folder, however deep.
+
+    Deleting a folder takes everything under it, and a question about that is
+    only answerable if it says how much everything is.
+    """
+    songs = others = 0
+    for _root, _dirs, names in os.walk(folder, onerror=lambda _e: None):
+        for name in names:
+            if is_midi(name):
+                songs += 1
+            else:
+                others += 1
+    return songs, others
 
 
 def trashed(result) -> bool:

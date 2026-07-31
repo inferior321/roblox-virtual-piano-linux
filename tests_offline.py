@@ -1142,6 +1142,7 @@ check("looseness is capped at what a person could plausibly do",
 import tempfile
 from rpiano.library import (
     copy_into,
+    folder_contents,
     folder_target,
     move_into,
     parse_clipboard,
@@ -1225,6 +1226,22 @@ for typed, expected in (("", None), ("  ", None), ("bad/name", None),
 target, _ = rename_target(sandbox / "song.mid", "tune.txt")
 check("an extension the library does not list cannot be renamed onto",
       target is not None and target.name == "tune.txt.mid", str(target))
+
+# Deleting a folder takes everything under it, and a question about that is
+# only answerable if it says how much everything is - including what is nested
+# further down, which is the part nobody has in mind when they click.
+deep = sandbox / "deep"
+(deep / "inner" / "deeper").mkdir(parents=True)
+(deep / "a.mid").write_bytes(b"x")
+(deep / "inner" / "b.mid").write_bytes(b"x")
+(deep / "inner" / "deeper" / "c.midi").write_bytes(b"x")
+(deep / "inner" / "notes.txt").write_bytes(b"x")
+check("a folder's contents are counted all the way down",
+      folder_contents(deep) == (3, 1), str(folder_contents(deep)))
+check("and an empty folder holds nothing",
+      folder_contents(sandbox / "taken") == (0, 0))
+check("a folder that is not there is not an error",
+      folder_contents(sandbox / "nope") == (0, 0))
 
 # A new folder wants nearly the rename rules, minus the extension - a folder has
 # none - plus one of its own: the scan skips dot-directories and the tree does

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import random
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -104,6 +105,7 @@ from .player import (
 )
 from .library import (
     copy_into,
+    folder_contents,
     folder_target,
     is_midi,
     move_into,
@@ -510,11 +512,15 @@ class MainWindow(QMainWindow):
                     lambda t=target: self._move_selected(t),
                 )
             elif not songs:
-                # A folder picked out on its own. Making a new one inside it is
-                # the only thing there is to offer that is not about songs.
+                # A folder picked out on its own, so the menu is about the
+                # folder itself rather than about anything in it.
                 menu.addAction(
-                    "New folder…", lambda f=clicked: self._new_folder(f)
+                    "Create subfolder…", lambda f=clicked: self._new_folder(f)
                 )
+                menu.addAction(
+                    "Delete folder", lambda f=clicked: self._delete_folder(f)
+                )
+                menu.addSeparator()
             _action, waiting = self._clipboard_files()
             # At least one thing on the clipboard has to be a song. A folder of
             # holiday photos on the clipboard is not something this can paste,
@@ -578,6 +584,58 @@ class MainWindow(QMainWindow):
             if index.isValid():
                 self.tree.setCurrentIndex(index)
                 self.tree.scrollTo(index)
+
+    def _delete_folder(self, folder: Path) -> None:
+        """The whole folder, and everything under it, to the Trash.
+
+        The most destructive thing here by a distance, so the question says how
+        much is inside rather than only what the folder is called - "and the 84
+        songs in it" is the part worth reading.
+        """
+        if folder == self._library_root or folder in self._library_root.parents:
+            QMessageBox.warning(
+                self,
+                "Delete folder",
+                "That is the folder the library is showing, or one holding "
+                "it. Point the library somewhere else first.",
+            )
+            return
+        songs, others = folder_contents(folder)
+        inside = []
+        if songs:
+            inside.append(f"{songs} song" + ("s" if songs > 1 else ""))
+        if others:
+            inside.append(f"{others} other file" + ("s" if others > 1 else ""))
+        question = f"Move {folder.name} to the Trash?"
+        if inside:
+            question += ("\n\nEverything inside goes with it: "
+                         f"{' and '.join(inside)}.")
+        if not self._ask(question):
+            return
+
+        if not trashed(QFile.moveToTrash(str(folder))):
+            if not self._ask(
+                f"{folder.name} cannot be moved to the Trash - the drive it "
+                f"is on has nowhere to put it.\n\nDelete it and everything "
+                f"in it permanently instead?"
+            ):
+                return
+            try:
+                shutil.rmtree(folder)
+            except OSError as exc:
+                QMessageBox.warning(
+                    self, "Delete folder", exc.strerror or str(exc)
+                )
+                return
+            self.log("warning", f"Deleted {folder.name} permanently.")
+        else:
+            self.log("info", f"{folder.name} moved to the Trash.")
+
+        # Anything the program was still pointing at inside it is gone with it.
+        for known in (self.config.last_file, getattr(self.song, "path", None)):
+            if known and folder in Path(known).parents:
+                self._file_moved(Path(known), None)
+        self._refresh_library()
 
     def _move_selected(self, target: Path) -> None:
         songs = [s for s in self._selected_songs() if s.parent != target]
