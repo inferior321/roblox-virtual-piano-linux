@@ -489,6 +489,15 @@ class SoundfontBackend(Backend):
             raise BackendError(f"No audio output available: {exc}") from exc
         self._synth, self._sfid = synth, sfid
 
+    def sounding(self) -> list:
+        """The notes whose keys are down right now.
+
+        Keys rather than voices: a note still ringing under the pedal has had
+        its key let go, and the keyboard strip is showing hands, not sound.
+        """
+        with self._lock:
+            return sorted(self._by_key.values())
+
     def close(self) -> None:
         # Silence, but keep the synth: close runs at the end of every song.
         self.release_all()

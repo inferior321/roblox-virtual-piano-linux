@@ -3187,6 +3187,7 @@ class MainWindow(QMainWindow):
             backend = self._live_backend()
             if backend is not None:
                 backend.release_all()
+                self.keyboard.clear()
             return super().eventFilter(watched, event)
         if kind not in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
             return super().eventFilter(watched, event)
@@ -3207,6 +3208,10 @@ class MainWindow(QMainWindow):
                 backend.key_down(char)
             else:
                 backend.key_up(char)
+            # The strip is driven by the player's progress while a song runs,
+            # and no song is running here - so live play has to say what it is
+            # holding, or the keyboard sits blank while you play.
+            self.keyboard.set_held(backend.sounding())
         # Taken whether or not it made a sound, so a key outside the layout's
         # range still cannot end up typed into whatever has the cursor.
         return True
@@ -3250,6 +3255,9 @@ class MainWindow(QMainWindow):
                 self.player.backend.open()
             except BackendError as exc:
                 QMessageBox.warning(self, "Live play", str(exc))
+        else:
+            # Leaving the mode: nothing is being held any more.
+            self.keyboard.clear()
         self._refresh_transport()
         self.log("info", f"Backend: {name}")
 

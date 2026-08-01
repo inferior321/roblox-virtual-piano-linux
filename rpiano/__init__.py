@@ -333,4 +333,10 @@
 # in all three places it can be seen. The mark is in the text because the
 # selection owns the background: two things fighting over one channel is how
 # "playing" ends up looking like "selected".
-__version__ = "1.26.0"
+#
+# 1.26.1 lights the on-screen keyboard while you play live. The strip is driven
+# by the player's progress as a song runs, and in live play no song is running
+# - so it sat blank while the notes sounded, and the mode had no picture of
+# what was being held. It says so itself now, and clears when the mode is left
+# or the window loses the focus, both of which let every key go anyway.
+__version__ = "1.26.1"
