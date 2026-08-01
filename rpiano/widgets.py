@@ -68,6 +68,27 @@ class LibrarySort(QSortFilterProxyModel):
         self.setDynamicSortFilter(True)
         self.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
 
+    # The row of whatever is playing, marked in the text rather than behind
+    # it: the selection already owns the background, and two things fighting
+    # over one channel is how "playing" ends up looking like "selected".
+    PLAYING_PREFIX = "\u25b6  "
+
+    def set_playing(self, path) -> None:
+        self._playing = Path(path) if path else None
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        playing = getattr(self, "_playing", None)
+        if playing is not None and index.column() == 0:
+            if role in (Qt.ItemDataRole.DisplayRole,
+                        Qt.ItemDataRole.ForegroundRole):
+                if Path(self.path_for(index)) == playing:
+                    if role == Qt.ItemDataRole.ForegroundRole:
+                        return QColor(theme.AMETHYST)
+                    return self.PLAYING_PREFIX + str(
+                        super().data(index, Qt.ItemDataRole.DisplayRole)
+                    )
+        return super().data(index, role)
+
     def lessThan(self, left, right) -> bool:
         source = self.sourceModel()
         left_is_dir = source.isDir(left)
@@ -254,6 +275,9 @@ class SearchResultDelegate(QStyledItemDelegate):
 
     PATH_ROLE = Qt.ItemDataRole.UserRole + 1
     KIND_ROLE = Qt.ItemDataRole.UserRole + 2
+    # Set on the row of whatever is playing, so it can be picked out
+    # without the delegate having to know what a song is.
+    PLAYING_ROLE = Qt.ItemDataRole.UserRole + 3
 
     HEADER = "header"
     FOLDER = "folder"
@@ -265,6 +289,7 @@ class SearchResultDelegate(QStyledItemDelegate):
         self._name = QColor(theme.IVORY)
         self._path = QColor(theme.MUTED)
         self._selected = QColor(theme.AMETHYST_DIM)
+        self._playing = QColor(theme.AMETHYST)
 
     def _small(self, font):
         small = QFont(font)
@@ -309,7 +334,11 @@ class SearchResultDelegate(QStyledItemDelegate):
             painter.fillRect(rect, self._selected)
 
         painter.setFont(option.font)
-        painter.setPen(QPen(self._name))
+        # Playing is said in the text colour, selected in the fill behind it,
+        # so a row that is both still says both.
+        painter.setPen(QPen(
+            self._playing if index.data(self.PLAYING_ROLE) else self._name
+        ))
         painter.drawText(
             QRectF(left, rect.top() + 4, width, metrics.height()),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,

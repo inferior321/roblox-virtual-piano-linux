@@ -1292,6 +1292,59 @@ check("only MIDI files are taken from a drop",
 
 shutil.rmtree(sandbox, ignore_errors=True)
 
+# ------------------------------------------------------------- THE PLAYLIST
+
+from rpiano.playlist import move_down, move_up, next_index, relocate, remove_at
+
+queue = ["a", "b", "c", "d", "e"]
+check("moving one row up moves it one row up",
+      move_up(queue, [1])[0] == ["b", "a", "c", "d", "e"])
+check("a row already at the top stays there",
+      move_up(queue, [0])[0] == queue)
+check("a row already at the bottom stays there",
+      move_down(queue, [4])[0] == queue)
+
+# A scattered selection moving as a block is where this goes wrong: rows that
+# have hit the edge must hold their place instead of being climbed over by the
+# ones behind them.
+moved, landed = move_up(queue, [0, 1, 4])
+check("a selection stacked against the top does not fold in on itself",
+      moved == ["a", "b", "c", "e", "d"] and landed == [0, 1, 3], f"{moved} {landed}")
+moved, landed = move_down(queue, [0, 3, 4])
+check("and the same against the bottom",
+      moved == ["b", "a", "c", "d", "e"] and sorted(landed) == [1, 3, 4],
+      f"{moved} {landed}")
+moved, landed = move_up(queue, [1, 3])
+check("two rows apart both move, and are still apart",
+      moved == ["b", "a", "d", "c", "e"] and landed == [0, 2], f"{moved} {landed}")
+check("removing takes exactly the rows chosen",
+      remove_at(queue, [1, 3]) == ["a", "c", "e"])
+
+# The playlist holds paths, so anything that moves a file on disk has to reach
+# it or the queue quietly fills with songs that are not there any more.
+entries = [Path("/lib/rock/a.mid"), Path("/lib/jazz/b.mid"), Path("/lib/rock/c.mid")]
+check("a renamed song is followed",
+      relocate(entries, "/lib/rock/a.mid", "/lib/rock/new.mid")[0]
+      == Path("/lib/rock/new.mid"))
+check("a deleted song is dropped",
+      relocate(entries, "/lib/rock/a.mid", None)
+      == [Path("/lib/jazz/b.mid"), Path("/lib/rock/c.mid")])
+check("a renamed folder brings everything under it along",
+      relocate(entries, "/lib/rock", "/lib/ROCK")
+      == [Path("/lib/ROCK/a.mid"), Path("/lib/jazz/b.mid"), Path("/lib/ROCK/c.mid")])
+check("a deleted folder takes only what was under it",
+      relocate(entries, "/lib/rock", None) == [Path("/lib/jazz/b.mid")])
+check("and a folder that shares a prefix is not mistaken for it",
+      relocate([Path("/lib/rocky/a.mid")], "/lib/rock", None)
+      == [Path("/lib/rocky/a.mid")])
+
+check("the queue moves on through the list",
+      [next_index(at, 3, False) for at in (0, 1, 2)] == [1, 2, None])
+check("and wraps when it is set to loop",
+      [next_index(at, 3, True) for at in (0, 1, 2)] == [1, 2, 0])
+check("an empty queue goes nowhere",
+      next_index(0, 0, True) is None)
+
 print()
 print(f"{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

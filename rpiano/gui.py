@@ -21,7 +21,7 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QDesktopServices, QFont
+from PyQt6.QtGui import QColor, QDesktopServices, QFont
 
 try:  # Qt 6 moved this out of QtWidgets
     from PyQt6.QtGui import QFileSystemModel
@@ -43,8 +43,10 @@ from PyQt6.QtWidgets import (
     QLabel,
     QInputDialog,
     QLineEdit,
-    QMenu,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -107,6 +109,13 @@ from .player import (
     suggest_transpose,
     test_pattern,
 )
+from .playlist import (
+    move_down,
+    move_up,
+    next_index,
+    relocate,
+    remove_at,
+)
 from .library import (
     copy_into,
     folder_contents,
@@ -120,6 +129,7 @@ from .library import (
     split_midi,
     uris_to_paths,
 )
+from . import theme
 from .widgets import (
     ClickableLabel,
     LibrarySort,
@@ -159,6 +169,9 @@ class MainWindow(QMainWindow):
         # what has the focus now. None means no lock on this song.
         self._focus = Focus()
         self._locked_to = None
+        # Where the queue has got to, and the order songs were clicked in.
+        self._queue_index = None
+        self._pick_order = []
         self._seeking = False
         self._hotkeys = None
         self._solo = set()
@@ -247,6 +260,17 @@ class MainWindow(QMainWindow):
         self._update_hotkey_hint()
 
     def _build_library(self) -> QWidget:
+        """The left pane: the library to choose from, and the queue to play."""
+        panel = QWidget()
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.library_tabs = QTabWidget()
+        self.library_tabs.addTab(self._build_explorer(), "Explorer")
+        self.library_tabs.addTab(self._build_playlist(), "Playlist")
+        outer.addWidget(self.library_tabs, 1)
+        return panel
+
+    def _build_explorer(self) -> QWidget:
         panel = QWidget()
         box = QVBoxLayout(panel)
         box.setContentsMargins(0, 0, 0, 0)
@@ -323,15 +347,20 @@ class MainWindow(QMainWindow):
         self.library_hint.setObjectName("Subtitle")
         box.addWidget(self.library_hint)
 
-        # Fast enough that a stray keystroke or two is the worst a wrong
-        # window ever sees, and slow enough to cost nothing: one property read
-        # on the root window, sixteen times a second.
         # One shot, because a loop is armed by a song ending rather than by
         # anything ticking away in the background.
         self._loop_timer = QTimer(self)
         self._loop_timer.setSingleShot(True)
         self._loop_timer.timeout.connect(self._play_again)
 
+        # The same, for the gap between one song in the queue and the next.
+        self._queue_timer = QTimer(self)
+        self._queue_timer.setSingleShot(True)
+        self._queue_timer.timeout.connect(self._play_next_queued)
+
+        # Fast enough that a stray keystroke or two is the worst a wrong
+        # window ever sees, and slow enough to cost nothing: one property read
+        # on the root window, sixteen times a second.
         self._focus_timer = QTimer(self)
         self._focus_timer.setInterval(60)
         self._focus_timer.timeout.connect(self._watch_focus)
@@ -339,6 +368,257 @@ class MainWindow(QMainWindow):
         self._wire_file_management()
         self._set_folder(self.config.midi_folder, save=False)
         return panel
+
+    def _build_playlist(self) -> QWidget:
+        """The queue: an order, and nothing in it that touches a file."""
+        panel = QWidget()
+        box = QVBoxLayout(panel)
+        box.setContentsMargins(0, 0, 0, 0)
+
+        self.playlist_view = QListWidget()
+        self.playlist_view.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        # Reordering by hand moves nothing on disk, so this is the one drag
+        # that is safe in this program: a playlist is an order, not a place.
+        self.playlist_view.setDragDropMode(
+            QAbstractItemView.DragDropMode.InternalMove
+        )
+        self.playlist_view.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.playlist_view.model().rowsMoved.connect(self._playlist_dragged)
+        self.playlist_view.itemDoubleClicked.connect(self._playlist_activated)
+        self.playlist_view.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.playlist_view.customContextMenuRequested.connect(self._playlist_menu)
+
+        self.playlist_empty = QLabel(
+            "No songs in the playlist yet.\n\n"
+            "Pick songs in the Explorer, right-click, and add them."
+        )
+        self.playlist_empty.setObjectName("Subtitle")
+        self.playlist_empty.setWordWrap(True)
+        self.playlist_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.playlist_stack = QStackedWidget()
+        self.playlist_stack.addWidget(self.playlist_view)
+        self.playlist_stack.addWidget(self.playlist_empty)
+        box.addWidget(self.playlist_stack, 1)
+
+        self.playlist_hint = QLabel("")
+        self.playlist_hint.setObjectName("Subtitle")
+        box.addWidget(self.playlist_hint)
+        self._reload_playlist()
+        return panel
+
+    # -- saying which song is playing --------------------------------------
+
+    def _playing_path(self):
+        """The song being played right now, wherever it came from."""
+        if self.player.state == IDLE or self.song is None:
+            return None
+        return getattr(self.song, "path", None)
+
+    def _mark_now_playing(self) -> None:
+        """Point at the playing song in all three places it can be seen.
+
+        The mark is a triangle and the accent colour on the *text*. The
+        selection owns the background everywhere in this program, and two
+        things fighting over one channel is how "playing" ends up looking like
+        "selected" - this way a row that is both still says both.
+        """
+        playing = self._playing_path()
+
+        self.tree_model.set_playing(playing)
+        self.tree.viewport().update()
+
+        for item in self._all_result_items():
+            stored = item.data(0, Qt.ItemDataRole.UserRole)
+            marked = bool(stored) and playing is not None and Path(stored) == playing
+            item.setData(0, SearchResultDelegate.PLAYING_ROLE, marked)
+            name = Path(stored).name if stored else item.text(0)
+            item.setText(0, LibrarySort.PLAYING_PREFIX + name if marked else name)
+
+        for row in range(self.playlist_view.count()):
+            item = self.playlist_view.item(row)
+            stored = item.data(Qt.ItemDataRole.UserRole)
+            name = Path(stored).name
+            if playing is not None and Path(stored) == playing:
+                item.setText(LibrarySort.PLAYING_PREFIX + name)
+                item.setForeground(QColor(theme.AMETHYST))
+            else:
+                item.setText(name)
+                item.setForeground(QColor(theme.IVORY))
+
+    def _all_result_items(self) -> list:
+        """Every row in the search results, however deeply opened."""
+        found = []
+        stack = [self.results.topLevelItem(index)
+                 for index in range(self.results.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            if item is None:
+                continue
+            found.append(item)
+            stack.extend(item.child(index) for index in range(item.childCount()))
+        return found
+
+    # -- the playlist ------------------------------------------------------
+    #
+    # An order, not a place. Nothing here touches a file: the songs are already
+    # somewhere, and this only says what to play after what.
+
+    def _playlist(self) -> list:
+        return [Path(item) for item in self.config.playlist]
+
+    def _set_playlist(self, songs) -> None:
+        self.config.playlist = [str(path) for path in songs]
+        self._reload_playlist()
+
+    def _reload_playlist(self) -> None:
+        """Rebuild the rows from the saved order."""
+        songs = self._playlist()
+        self.playlist_view.blockSignals(True)
+        self.playlist_view.clear()
+        for path in songs:
+            item = QListWidgetItem(path.name)
+            item.setData(Qt.ItemDataRole.UserRole, str(path))
+            item.setToolTip(str(path))
+            self.playlist_view.addItem(item)
+        self.playlist_view.blockSignals(False)
+        self.playlist_stack.setCurrentWidget(
+            self.playlist_view if songs else self.playlist_empty
+        )
+        self.playlist_hint.setText(
+            "" if not songs else
+            f"{len(songs)} song" + ("s" if len(songs) > 1 else "")
+        )
+        self._mark_now_playing()
+
+    def _playlist_rows(self) -> list:
+        return sorted(
+            self.playlist_view.row(item)
+            for item in self.playlist_view.selectedItems()
+        )
+
+    def _playlist_add(self, songs) -> None:
+        """Put songs on the end, in the order they were picked out.
+
+        Duplicates are allowed: a playlist is an order, and an order may well
+        want the same song twice.
+        """
+        if not songs:
+            return
+        self._set_playlist(self._playlist() + list(songs))
+        self.log("info", f"Added {self._names(list(songs))} to the playlist.")
+
+    def _playlist_dragged(self, *_args) -> None:
+        """The rows have been reordered by hand; take the list from them."""
+        songs = [
+            Path(self.playlist_view.item(row).data(Qt.ItemDataRole.UserRole))
+            for row in range(self.playlist_view.count())
+        ]
+        # Straight to the setting, not through _set_playlist: the rows already
+        # look right, and rebuilding them under a drag that has just finished
+        # is what makes a list flicker.
+        self.config.playlist = [str(path) for path in songs]
+        self._mark_now_playing()
+
+    def _playlist_move(self, up: bool) -> None:
+        rows = self._playlist_rows()
+        if not rows:
+            return
+        mover = move_up if up else move_down
+        songs, landed = mover(self._playlist(), rows)
+        playing = self._queue_index
+        if playing is not None and playing in rows:
+            # The song that is playing has moved, so the queue's place in the
+            # list moves with it - otherwise the next song would be wrong.
+            self._queue_index = landed[rows.index(playing)]
+        self._set_playlist(songs)
+        for row in landed:
+            self.playlist_view.item(row).setSelected(True)
+
+    def _playlist_remove(self) -> None:
+        rows = self._playlist_rows()
+        if not rows:
+            return
+        if self._queue_index in rows:
+            self._queue_index = None
+        elif self._queue_index is not None:
+            self._queue_index -= sum(1 for row in rows if row < self._queue_index)
+        self._set_playlist(remove_at(self._playlist(), rows))
+        self.log("info", f"Took {len(rows)} out of the playlist."
+                 if len(rows) > 1 else "Took one song out of the playlist.")
+
+    def _playlist_clear(self) -> None:
+        songs = self._playlist()
+        if not songs:
+            return
+        if not self._ask(
+            f"Clear the playlist?\n\nIt holds {len(songs)} song"
+            + ("s" if len(songs) > 1 else "")
+            + ". Nothing on disk is touched."
+        ):
+            return
+        self._queue_index = None
+        self._set_playlist([])
+        self.log("info", "Playlist cleared.")
+
+    def _playlist_menu(self, pos) -> None:
+        item = self.playlist_view.itemAt(pos)
+        menu = QMenu(self)
+        if item is None:
+            # The space around the rows is the list itself.
+            if self._playlist():
+                menu.addAction("Clear playlist", self._playlist_clear)
+        else:
+            if not item.isSelected():
+                self.playlist_view.setCurrentItem(item)
+            rows = self._playlist_rows()
+            if self.playlist_view.count() > 1:
+                menu.addAction("Move up", lambda: self._playlist_move(True))
+                menu.addAction("Move down", lambda: self._playlist_move(False))
+                menu.addSeparator()
+            menu.addAction(
+                "Remove from playlist" if len(rows) == 1
+                else f"Remove {len(rows)} from playlist",
+                self._playlist_remove,
+            )
+        if menu.actions():
+            menu.exec(self.playlist_view.viewport().mapToGlobal(pos))
+
+    def _playlist_activated(self, item) -> None:
+        self._play_queued(self.playlist_view.row(item))
+
+    def _play_queued(self, position: int, count_in: bool = True) -> None:
+        """Start the song at that place in the queue, and remember where."""
+        songs = self._playlist()
+        if not 0 <= position < len(songs):
+            self._queue_index = None
+            return
+        path = songs[position]
+        if not path.exists():
+            self.log("warning", f"{path.name} is not there any more; skipping it.")
+            self._set_playlist(remove_at(songs, [position]))
+            self._play_queued(position, count_in)
+            return
+        self._queue_index = position
+        self._load_path(path, from_queue=True)
+        if self.song is not None:
+            self.player.play(count_in=count_in)
+
+    def _play_next_queued(self) -> None:
+        if self._queue_index is None:
+            return
+        following = next_index(
+            self._queue_index, len(self._playlist()), self.config.loop_playlist
+        )
+        if following is None:
+            self._queue_index = None
+            self.log("info", "Playlist finished.")
+            return
+        self._play_queued(following, count_in=False)
 
     # -- managing the files, not just listing them -------------------------
 
@@ -362,7 +642,7 @@ class MainWindow(QMainWindow):
             )
             view.filesDropped.connect(self._files_dropped)
             view.selectionModel().selectionChanged.connect(
-                lambda picked, gone, v=view: self._keep_one_folder(v, picked)
+                lambda picked, gone, v=view: self._selection_changed(v, picked, gone)
             )
             view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             view.customContextMenuRequested.connect(
@@ -403,6 +683,45 @@ class MainWindow(QMainWindow):
         item = self.results.itemFromIndex(index)
         stored = item.data(0, Qt.ItemDataRole.UserRole) if item else None
         return Path(stored) if stored else None
+
+    def _selection_changed(self, view, picked, gone) -> None:
+        self._remember_order(view, picked, gone)
+        self._keep_one_folder(view, picked)
+
+    def _remember_order(self, view, picked, gone) -> None:
+        """Keep the order songs were picked out in.
+
+        A selection model hands rows back in the order they are listed, not the
+        order they were clicked. Adding a handful to the playlist wants the
+        second, so it is written down as it happens - there is nowhere to read
+        it from afterwards.
+        """
+        for index in gone.indexes():
+            if index.column():
+                continue
+            path = self._path_for(view, index)
+            if path in self._pick_order:
+                self._pick_order.remove(path)
+        for index in picked.indexes():
+            if index.column():
+                continue
+            path = self._path_for(view, index)
+            if (path is not None and path not in self._pick_order
+                    and path.is_file() and is_midi(path)):
+                self._pick_order.append(path)
+
+    def _songs_in_pick_order(self) -> list:
+        """The selected songs, oldest choice first."""
+        chosen = self._selected_songs()
+        remaining = list(chosen)
+        ordered = []
+        for path in self._pick_order:
+            if path in remaining:
+                remaining.remove(path)
+                ordered.append(path)
+        # Anything the order missed - a selection made before this was watching
+        # - still belongs, just at the end.
+        return ordered + remaining
 
     def _keep_one_folder(self, view, picked) -> None:
         """Only ever one folder picked out: the one chosen last.
@@ -585,6 +904,13 @@ class MainWindow(QMainWindow):
             )
         elif songs:
             # Songs and nothing else, so the menu is about the songs.
+            ordered = self._songs_in_pick_order()
+            menu.addAction(
+                "Add to playlist" if len(songs) == 1
+                else f"Add {len(songs)} songs to playlist",
+                lambda picked=ordered: self._playlist_add(picked),
+            )
+            menu.addSeparator()
             if len(songs) == 1:
                 menu.addAction("Rename…", self._rename_selected)
             menu.addAction(
@@ -648,6 +974,7 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Rename folder", exc.strerror or str(exc))
             return
+        self._relocate(folder, target)
         # Every song under it has moved with it, including the one playing.
         for known in (self.config.last_file, getattr(self.song, "path", None)):
             if known and folder in Path(known).parents:
@@ -711,6 +1038,7 @@ class MainWindow(QMainWindow):
             self.log("info", f"{folder.name} moved to the Trash.")
 
         # Anything the program was still pointing at inside it is gone with it.
+        self._relocate(folder, None)
         for known in (self.config.last_file, getattr(self.song, "path", None)):
             if known and folder in Path(known).parents:
                 self._file_moved(Path(known), None)
@@ -821,6 +1149,21 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         ) == QMessageBox.StandardButton.Yes
 
+    def _relocate(self, old: Path, new: Path) -> None:
+        """Follow a song or a folder that has been renamed, moved or deleted.
+
+        The playlist holds paths, so anything that changes one has to reach it
+        or the queue quietly fills with songs that are not there.
+        """
+        songs = self._playlist()
+        following = relocate(songs, old, new)
+        if following != songs:
+            if self._queue_index is not None and len(following) != len(songs):
+                # The list has shrunk under the queue's feet, so the place it
+                # was keeping no longer means anything.
+                self._queue_index = None
+            self._set_playlist(following)
+
     def _file_moved(self, old: Path, new: Path) -> None:
         """Keep what points at a song pointing at it, or at nothing.
 
@@ -828,6 +1171,7 @@ class MainWindow(QMainWindow):
         memory and have nothing to do with the file any more - but everything
         that would go back to the file for it needs to know.
         """
+        self._relocate(old, new)
         if self.config.last_file == str(old):
             self.config.last_file = str(new) if new else ""
         if self.song is not None and getattr(self.song, "path", None) == old:
@@ -968,6 +1312,7 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         for page, name in (
             (self._build_playback_tab(), "Playback"),
+            (self._build_queue_tab(), "Playlist"),
             (self._build_timing_tab(), "Timing"),
             (self._build_tracks_tab(), "Tracks"),
             (self._build_input_tab(), "Input"),
@@ -1182,6 +1527,78 @@ class MainWindow(QMainWindow):
         form.addRow("", self._defaults_row(
             self._reset_playback, "everything on this tab"))
         return page
+
+    def _build_queue_tab(self) -> QWidget:
+        page = QWidget()
+        outer = QVBoxLayout(page)
+
+        blurb = QLabel(
+            "The playlist is a queue: when a song ends the next one starts, "
+            "and the list is on the Playlist tab beside the Explorer. These "
+            "settings are what happens around that."
+        )
+        blurb.setObjectName("Subtitle")
+        blurb.setWordWrap(True)
+        outer.addWidget(blurb)
+
+        form = QFormLayout()
+        form.setSpacing(9)
+
+        queue_row = QHBoxLayout()
+        self.loop_playlist_check = QCheckBox("Start again from the top at the end")
+        self.loop_playlist_check.setChecked(self.config.loop_playlist)
+        self.loop_playlist_check.toggled.connect(
+            lambda value: setattr(self.config, "loop_playlist", value)
+        )
+        queue_row.addWidget(self.loop_playlist_check)
+        queue_row.addStretch(1)
+        form.addRow("Loop the playlist", queue_row)
+        self._explain(
+            form,
+            "Off, the queue stops when the last song ends. On, it goes back "
+            "to the first and keeps going."
+        )
+
+        self.playlist_delay_spin = QDoubleSpinBox()
+        self.playlist_delay_spin.setRange(0.0, 60.0)
+        self.playlist_delay_spin.setSingleStep(0.5)
+        self.playlist_delay_spin.setValue(self.config.playlist_delay)
+        self.playlist_delay_spin.setSuffix(" s")
+        self.playlist_delay_spin.valueChanged.connect(
+            lambda value: setattr(self.config, "playlist_delay", value)
+        )
+        form.addRow("Wait between songs", self.playlist_delay_spin)
+        self._explain(
+            form,
+            "The gap after one song ends and before the next begins. It "
+            "replaces the count-in rather than adding to it, the same as Loop "
+            "does - you are already where the music is going."
+        )
+
+        self._explain(
+            form,
+            "Loop on the Playback tab wins over both of these. With it ticked "
+            "the current song repeats until you untick it, and only then does "
+            "the queue move on, using its own wait rather than Loop's."
+        )
+
+        outer.addLayout(form)
+        outer.addStretch(1)
+        outer.addWidget(self._rule())
+        outer.addLayout(self._defaults_row(
+            self._reset_queue, "these two settings"))
+        return page
+
+    def _reset_queue(self) -> None:
+        fresh = AppConfig()
+        self.loop_playlist_check.setChecked(fresh.loop_playlist)
+        self.playlist_delay_spin.setValue(fresh.playlist_delay)
+        self.log(
+            "info",
+            f"Playlist settings back to defaults: no looping, "
+            f"{fresh.playlist_delay:g}s between songs. The list itself is "
+            f"untouched - Clear playlist is how that goes.",
+        )
 
     def _build_timing_tab(self) -> QWidget:
         page = QWidget()
@@ -1818,6 +2235,7 @@ class MainWindow(QMainWindow):
             return
 
         self._fill_results(folders, files)
+        self._mark_now_playing()
         self.library_stack.setCurrentWidget(self.results)
         counts = []
         if folders:
@@ -1924,7 +2342,14 @@ class MainWindow(QMainWindow):
         if path.is_file() and path.suffix.lower() in (".mid", ".midi"):
             self._load_path(path)
 
-    def _load_path(self, path: Path) -> None:
+    def _load_path(self, path: Path, from_queue: bool = False) -> None:
+        # Picking a song by hand leaves the queue: you started it deliberately,
+        # so leaving it deliberately is the matching gesture. The order is kept
+        # for when you start it again.
+        if not from_queue and self._queue_index is not None:
+            self._queue_index = None
+            self._stop_timers()
+            self.log("info", "Playlist set aside; that song was chosen by hand.")
         self.player.stop()
         try:
             song = load_song(path, include_drums=self.config.include_drums)
@@ -3008,11 +3433,13 @@ class MainWindow(QMainWindow):
         self.player.seek(fraction * self.player.song.duration)
 
     def _on_state(self, state: str) -> None:
+        self._mark_now_playing()
         # The reader is cheap, but not so cheap that it should tick all day
         # behind a window with nothing playing.
         if state != IDLE:
-            # Something is under way, so a loop waiting to fire is stale.
-            self._loop_timer.stop()
+            # Something is under way, so a wait to start something else is
+            # stale.
+            self._stop_timers()
         if state == PLAYING:
             self._focus_timer.start()
         else:
@@ -3071,6 +3498,10 @@ class MainWindow(QMainWindow):
         if song and song.duration > 0 and not self._seeking:
             self.seek.setValue(int(1000 * min(1.0, position / song.duration)))
 
+    def _stop_timers(self) -> None:
+        self._loop_timer.stop()
+        self._queue_timer.stop()
+
     def _stop(self) -> None:
         """Stop, and mean it.
 
@@ -3078,13 +3509,19 @@ class MainWindow(QMainWindow):
         stopping it changes no state and nothing else would hear about it -
         but Stop during that wait plainly means "and do not start again".
         """
-        self._loop_timer.stop()
+        self._stop_timers()
+        self._queue_index = None
         self.player.stop()
 
     def _loop_toggled(self, checked: bool) -> None:
         self.config.loop_song = checked
         if not checked:
             self._loop_timer.stop()
+            if self._queue_index is not None and self.player.state == IDLE:
+                # Loop was holding the queue back. Unticking it hands over.
+                self._queue_timer.start(
+                    max(0, int(self.config.playlist_delay * 1000))
+                )
 
     def _play_again(self) -> None:
         """The loop's own start, once the wait is up."""
@@ -3097,10 +3534,19 @@ class MainWindow(QMainWindow):
     def _on_finished(self) -> None:
         self._reset_transport_display()
         # Only a song that ran to the end gets here; stopping one does not.
+        #
+        # Loop wins over the queue. Both are "what next", and the narrower
+        # answer is the one that was asked for: with Loop ticked the song
+        # repeats until it is unticked, and only then does the queue get its
+        # turn - with its own gap, not the loop's.
         if self.config.loop_song and self.song is not None:
             wait = self.config.loop_delay
             self.log("info", f"Loop: playing it again in {wait:g}s.")
             self._loop_timer.start(max(0, int(wait * 1000)))
+            return
+        if self._queue_index is not None:
+            wait = self.config.playlist_delay
+            self._queue_timer.start(max(0, int(wait * 1000)))
 
     def _on_error(self, message: str) -> None:
         self.status.showMessage(message, 8000)
@@ -3279,6 +3725,8 @@ class MainWindow(QMainWindow):
         self.config.start_delay = self.delay_spin.value()
         self.config.loop_song = self.loop_check.isChecked()
         self.config.loop_delay = self.loop_delay_spin.value()
+        self.config.loop_playlist = self.loop_playlist_check.isChecked()
+        self.config.playlist_delay = self.playlist_delay_spin.value()
         self.config.sustain_cutoff = self.cutoff_slider.value()
         self.config.humanize_timing_ms = self.hz_timing_spin.value()
         self.config.humanize_length_ms = self.hz_length_spin.value()

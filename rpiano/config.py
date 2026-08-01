@@ -107,6 +107,13 @@ class AppConfig:
     # says so in the Log and plays anyway.
     lock_window: bool = True
 
+    # The order songs are queued in, and what happens at the end of it. The
+    # list is kept because an order is work to build; the window still opens on
+    # the Explorer, since remembering a list is not the same as showing it.
+    playlist: list = field(default_factory=list)
+    loop_playlist: bool = False
+    playlist_delay: float = 3.0
+
     always_on_top: bool = False
     opacity: int = 100
 

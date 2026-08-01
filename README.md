@@ -152,6 +152,50 @@ anything or asking. Folders are left alone throughout: they can be dropped and
 pasted into, but not renamed or deleted, so a stray keypress cannot take a
 hundred songs with it.
 
+## The playlist
+
+The left pane has two tabs. **Explorer** is the library, and is what the window
+opens on. **Playlist** is the order songs are to be played in — an order, not a
+place: nothing in it touches a file.
+
+**Adding** is done from the Explorer. Pick one song or several, right-click,
+and the menu's first entry is *Add to playlist*. Several go in **in the order
+you clicked them**, not the order they happen to be listed, so a queue built
+out of a folder comes out the way you meant. Folders are never offered it, and
+neither is a selection that mixes songs with a folder.
+
+**It is a queue.** When a song ends the next one starts, after the wait on the
+Playlist tab. *Loop the playlist* decides only what happens at the end of the
+list: back to the first, or stop. A song that has gone missing is skipped, said
+so in the Log, and dropped from the list rather than stopping everything.
+
+**In the list**: right-click for *Move up*, *Move down* and *Remove from
+playlist*, or drag rows to reorder them — the one drag in this program that is
+safe, because it moves nothing on disk. Right-clicking the empty space offers
+*Clear playlist*, which asks first. There are deliberately no file operations
+here at all: no rename, no delete, no paste.
+
+**It stays in step with the library.** Rename a song, or a whole folder, and
+the playlist follows it; delete one and it leaves the list.
+
+**Loop on the Playback tab wins over all of this.** Both answer "what next",
+and the narrower answer is the one that was asked for: with Loop ticked the
+current song repeats until you untick it, and only then does the queue move on
+— using its own wait rather than Loop's.
+
+Double-clicking a song in the **Explorer** sets the queue aside. You started it
+deliberately, so leaving it is deliberate too, and the order is kept for when
+you start it again.
+
+## Which song is playing
+
+Wherever the playing song can be seen — the browse tree, the search results, or
+the playlist — it is marked with a **▶ and the accent colour on its name**.
+
+The selection owns the background everywhere in this program, so the mark uses
+the text instead. Two things fighting over one channel is how "playing" ends up
+looking like "selected"; this way a row that is both still says both.
+
 ## Loop
 
 **Loop** (Playback tab) plays the song again when it reaches the end, after a

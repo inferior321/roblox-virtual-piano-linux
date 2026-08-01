@@ -314,4 +314,23 @@
 # so nothing reaches the search box, and everything else is left alone so the
 # program stays usable and the mode can always be left. The transport goes grey
 # with it: a song and a pair of hands on the same piano is not what was meant.
-__version__ = "1.25.0"
+#
+# 1.26.0 adds the playlist, and says which song is playing.
+#
+# The left pane gains a second tab holding an order to play songs in - an
+# order, not a place, so nothing in it touches a file. It is a queue: a song
+# ending starts the next one, and looping the playlist only decides what
+# happens at the end of the list. Loop on the Playback tab wins over it, since
+# both answer "what next" and the narrower answer is the one that was asked
+# for. Entries follow a song, or a whole folder, that is renamed or moved, and
+# leave when one is deleted.
+#
+# Songs added together go in in the order they were clicked. A selection model
+# hands rows back in the order they are listed, so that order is written down
+# as it happens - there is nowhere to read it from afterwards.
+#
+# The playing song is marked with a triangle and the accent colour on its name,
+# in all three places it can be seen. The mark is in the text because the
+# selection owns the background: two things fighting over one channel is how
+# "playing" ends up looking like "selected".
+__version__ = "1.26.0"
