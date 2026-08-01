@@ -38,6 +38,13 @@ class AppConfig:
     max_held_keys: int = 0
     start_delay: float = 3.0
     include_drums: bool = False
+
+    # Play the song again when it reaches the end, after this long. Off by
+    # default. The wait replaces the count-in rather than adding to it: the
+    # count-in is there to give you time to reach the game, and by the time a
+    # song has played through you are already there.
+    loop_song: bool = False
+    loop_delay: float = 3.0
     skip_seconds: int = 10
 
     # Which key pedals, and whether a pedal is used at all. Kept apart so

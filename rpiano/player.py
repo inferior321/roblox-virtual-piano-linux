@@ -161,6 +161,7 @@ class Player:
         self._sustain_index = 0
         self._sustain_down = False
         self._last_progress = 0.0
+        self._count_in = True
 
     # -- state -------------------------------------------------------------
 
@@ -253,7 +254,13 @@ class Player:
 
     # -- transport ---------------------------------------------------------
 
-    def play(self) -> None:
+    def play(self, count_in: bool = True) -> None:
+        """Start, or carry on from a pause.
+
+        `count_in` is false when the program starts a song rather than a person
+        does - a loop, or the next song in a queue. The count-in exists to give
+        you time to reach the game, and by then you are already there.
+        """
         if self.song is None:
             return
         with self._lock:
@@ -264,6 +271,9 @@ class Player:
             if self._state in (PLAYING, COUNTING_IN):
                 return
             self._should_stop = False
+            # Read by the thread, so it is settled here rather than by putting
+            # the setting back afterwards and hoping the thread got there first.
+            self._count_in = count_in
             self._thread = threading.Thread(
                 target=self._run, name="rpiano-player", daemon=True
             )
@@ -306,10 +316,7 @@ class Player:
         was_live = self._state in (PLAYING, COUNTING_IN, PAUSED)
         self.stop()
         if was_live:
-            saved = self.settings.start_delay
-            self.settings.start_delay = 0.0
-            self.play()
-            self.settings.start_delay = saved
+            self.play(count_in=False)
 
     def seek(self, seconds: float) -> None:
         with self._lock:
@@ -347,7 +354,7 @@ class Player:
         # to, and the Log says what was decided before a note of it is heard.
         self._plan_events()
 
-        if self.settings.start_delay > 0:
+        if self._count_in and self.settings.start_delay > 0:
             self._set_state(COUNTING_IN)
             deadline = time.perf_counter() + self.settings.start_delay
             while not self._should_stop:

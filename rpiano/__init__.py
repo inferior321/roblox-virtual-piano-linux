@@ -295,4 +295,14 @@
 # neither enabling sorting on the view nor toggling the order fixed it. A
 # sorting proxy between the model and the view sorts on every insertion, which
 # does. Folders still come before files, and names still ignore case.
-__version__ = "1.23.2"
+#
+# 1.24.0 adds Loop to the Playback tab: play the song again when it ends, after
+# a wait of its own. The wait replaces the count-in rather than adding to it,
+# since the count-in is there to give you time to reach the game and a song
+# that has just played through has already done that. Ticking it starts
+# nothing; it takes effect the next time a song reaches the end.
+#
+# The player can be told to start without the count-in now, rather than having
+# its setting changed and put back around the call - which restart() was doing,
+# and which raced the thread it had just started.
+__version__ = "1.24.0"

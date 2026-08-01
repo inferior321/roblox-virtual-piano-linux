@@ -152,6 +152,19 @@ anything or asking. Folders are left alone throughout: they can be dropped and
 pasted into, but not renamed or deleted, so a stray keypress cannot take a
 hundred songs with it.
 
+## Loop
+
+**Loop** (Playback tab) plays the song again when it reaches the end, after a
+wait you set — three seconds to begin with. It is off to start with, and
+ticking it never starts anything by itself: it means that the *next* time a
+song runs to the end, it begins again.
+
+The wait replaces the count-in rather than adding to it. The count-in exists to
+give you time to reach the game before the first note, and by the time a song
+has played all the way through you are already there.
+
+Stop during the wait means what it says, and so does unticking the box.
+
 ## The window lock
 
 **Pause if another window takes the focus** (Input tab, on by default) is for

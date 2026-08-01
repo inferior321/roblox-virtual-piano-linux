@@ -321,6 +321,12 @@ class MainWindow(QMainWindow):
         # Fast enough that a stray keystroke or two is the worst a wrong
         # window ever sees, and slow enough to cost nothing: one property read
         # on the root window, sixteen times a second.
+        # One shot, because a loop is armed by a song ending rather than by
+        # anything ticking away in the background.
+        self._loop_timer = QTimer(self)
+        self._loop_timer.setSingleShot(True)
+        self._loop_timer.timeout.connect(self._play_again)
+
         self._focus_timer = QTimer(self)
         self._focus_timer.setInterval(60)
         self._focus_timer.timeout.connect(self._watch_focus)
@@ -914,7 +920,7 @@ class MainWindow(QMainWindow):
 
         self.stop_button = QPushButton("Stop")
         self.stop_button.setObjectName("Transport")
-        self.stop_button.clicked.connect(lambda: self.player.stop())
+        self.stop_button.clicked.connect(self._stop)
         self.stop_button.setEnabled(False)
         transport.addWidget(self.stop_button)
 
@@ -1124,6 +1130,32 @@ class MainWindow(QMainWindow):
         self.skip_spin.setSuffix(" s")
         self.skip_spin.valueChanged.connect(self._skip_changed)
         form.addRow("Skip step", self.skip_spin)
+
+        loop_row = QHBoxLayout()
+        self.loop_check = QCheckBox("Play it again when it reaches the end")
+        self.loop_check.setChecked(self.config.loop_song)
+        self.loop_check.toggled.connect(self._loop_toggled)
+        loop_row.addWidget(self.loop_check)
+        loop_row.addWidget(QLabel("after"))
+        self.loop_delay_spin = QDoubleSpinBox()
+        self.loop_delay_spin.setRange(0.0, 60.0)
+        self.loop_delay_spin.setSingleStep(0.5)
+        self.loop_delay_spin.setValue(self.config.loop_delay)
+        self.loop_delay_spin.setSuffix(" s")
+        self.loop_delay_spin.valueChanged.connect(
+            lambda value: setattr(self.config, "loop_delay", value)
+        )
+        loop_row.addWidget(self.loop_delay_spin)
+        loop_row.addStretch(1)
+        form.addRow("Loop", loop_row)
+        self._explain(
+            form,
+            "Off, a song stops when it ends. On, it starts again after the "
+            "wait - which replaces the count-in rather than adding to it, "
+            "since by then you are already where the music is going. Ticking "
+            "it never starts anything on its own; it takes effect the next "
+            "time a song reaches the end."
+        )
 
         rule = QFrame()
         rule.setObjectName("Rule")
@@ -2226,6 +2258,8 @@ class MainWindow(QMainWindow):
         self.fold_check.setChecked(fresh.fold_out_of_range)
         self.delay_spin.setValue(fresh.start_delay)
         self.skip_spin.setValue(fresh.skip_seconds)
+        self.loop_check.setChecked(fresh.loop_song)
+        self.loop_delay_spin.setValue(fresh.loop_delay)
         self.on_top_check.setChecked(fresh.always_on_top)
         self.opacity_slider.setValue(fresh.opacity)
         # A default transpose is not zero when a song is open and the box is
@@ -2888,6 +2922,9 @@ class MainWindow(QMainWindow):
     def _on_state(self, state: str) -> None:
         # The reader is cheap, but not so cheap that it should tick all day
         # behind a window with nothing playing.
+        if state != IDLE:
+            # Something is under way, so a loop waiting to fire is stale.
+            self._loop_timer.stop()
         if state == PLAYING:
             self._focus_timer.start()
         else:
@@ -2946,8 +2983,36 @@ class MainWindow(QMainWindow):
         if song and song.duration > 0 and not self._seeking:
             self.seek.setValue(int(1000 * min(1.0, position / song.duration)))
 
+    def _stop(self) -> None:
+        """Stop, and mean it.
+
+        A song that has ended and is waiting out a loop is already idle, so
+        stopping it changes no state and nothing else would hear about it -
+        but Stop during that wait plainly means "and do not start again".
+        """
+        self._loop_timer.stop()
+        self.player.stop()
+
+    def _loop_toggled(self, checked: bool) -> None:
+        self.config.loop_song = checked
+        if not checked:
+            self._loop_timer.stop()
+
+    def _play_again(self) -> None:
+        """The loop's own start, once the wait is up."""
+        if self.song is None or self.player.state != IDLE:
+            return
+        if not self.config.loop_song:
+            return
+        self.player.play(count_in=False)
+
     def _on_finished(self) -> None:
         self._reset_transport_display()
+        # Only a song that ran to the end gets here; stopping one does not.
+        if self.config.loop_song and self.song is not None:
+            wait = self.config.loop_delay
+            self.log("info", f"Loop: playing it again in {wait:g}s.")
+            self._loop_timer.start(max(0, int(wait * 1000)))
 
     def _on_error(self, message: str) -> None:
         self.status.showMessage(message, 8000)
@@ -3095,7 +3160,7 @@ class MainWindow(QMainWindow):
         if action == "toggle":
             self._toggle()
         elif action == "stop":
-            self.player.stop()
+            self._stop()
         elif action == "restart":
             self.player.restart()
         elif action == "down":
@@ -3124,6 +3189,8 @@ class MainWindow(QMainWindow):
         self.config.fold_out_of_range = self.fold_check.isChecked()
         self.config.max_held_keys = self.max_held_spin.value()
         self.config.start_delay = self.delay_spin.value()
+        self.config.loop_song = self.loop_check.isChecked()
+        self.config.loop_delay = self.loop_delay_spin.value()
         self.config.sustain_cutoff = self.cutoff_slider.value()
         self.config.humanize_timing_ms = self.hz_timing_spin.value()
         self.config.humanize_length_ms = self.hz_length_spin.value()
