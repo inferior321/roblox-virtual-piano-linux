@@ -609,11 +609,13 @@ class MainWindow(QMainWindow):
             return
         self._queue_index = position
         self._load_path(path, from_queue=True)
-        if self.song is not None:
+        # Loading is fine in live play - seeing what you picked is useful, and
+        # it is only starting it that would take the piano back off you.
+        if self.song is not None and self._may_play():
             self.player.play(count_in=count_in)
 
     def _play_next_queued(self) -> None:
-        if self._queue_index is None:
+        if self._queue_index is None or not self._may_play():
             return
         following = next_index(
             self._queue_index, len(self._playlist()), self.config.loop_playlist
@@ -3220,6 +3222,24 @@ class MainWindow(QMainWindow):
         # range still cannot end up typed into whatever has the cursor.
         return True
 
+    def _may_play(self) -> bool:
+        """Is anything allowed to start a song right now?
+
+        Live play owns the piano while it is chosen, so nothing else may drive
+        it. Greying the transport says so to the mouse, but the hotkeys and a
+        double-click reach the player without going near a button - and a song
+        starting under your hands while you are playing is exactly what the
+        mode is supposed to rule out.
+        """
+        if self.config.backend != LivePlayBackend.name:
+            return True
+        self.log(
+            "info",
+            "Live play: the piano is yours. Choose another backend in Send "
+            "keys via to play a song.",
+        )
+        return False
+
     def _open_live_play(self) -> None:
         """Open the synth the moment live play is the chosen backend.
 
@@ -3403,6 +3423,8 @@ class MainWindow(QMainWindow):
         self.log("info", f"Imported {len(layout.notes)} notes from {Path(path).name}")
 
     def _play_builtin(self, song, subtitle: str) -> None:
+        if not self._may_play():
+            return
         self.player.stop()
         self.song = None
         # The test patterns are a single track of their own, so they must not
@@ -3551,6 +3573,8 @@ class MainWindow(QMainWindow):
     def _play_again(self) -> None:
         """The loop's own start, once the wait is up."""
         if self.song is None or self.player.state != IDLE:
+            return
+        if not self._may_play():
             return
         if not self.config.loop_song:
             return
@@ -3716,6 +3740,10 @@ class MainWindow(QMainWindow):
 
     def _on_hotkey(self, action: str) -> None:
         """Runs on the GUI thread, via the bridge signal."""
+        # Stop and the transpose keys are always allowed: one is a safety and
+        # the others are settings. The rest would start or move a song.
+        if action not in ("stop", "down", "up") and not self._may_play():
+            return
         if action == "toggle":
             self._toggle()
         elif action == "stop":

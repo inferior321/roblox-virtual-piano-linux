@@ -346,4 +346,11 @@
 # But starting up on it is not choosing it: the combo box is set before its
 # signal is connected, so nothing counted as a choice and the synth was never
 # opened. It played nothing until the setting was changed and changed back.
-__version__ = "1.26.2"
+#
+# 1.26.3 stops anything starting a song while live play is on. Greying the
+# transport said so to the mouse, but the hotkeys and a double-click reach the
+# player without going near a button - so F1 still played, and a song in the
+# playlist started when it was double-clicked. Every path that starts playback
+# asks one question now. Loading still works: seeing what you picked costs
+# nothing, and it is only starting it that takes the piano back off you.
+__version__ = "1.26.3"

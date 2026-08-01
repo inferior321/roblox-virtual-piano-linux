@@ -289,10 +289,15 @@ still moves about, alt-tab still leaves — so the program stays usable and ther
 is no way to be stuck in the mode. A held key that repeats does not restrike,
 and a note held as you switch away is let go rather than sounding on.
 
-The transport goes grey while it is selected. A song and a pair of hands
-playing the same piano at once is not what anybody meant, so choosing live play
-stops whatever was playing and leaves Play, Stop and the seek bar out of it.
-It needs a soundfont, exactly as the preview does.
+**Nothing else can start a song while it is on.** The transport goes grey, and
+so does everything behind it: the hotkeys, double-clicking a song in the
+Explorer or the playlist, the queue moving on, Loop, and the two test buttons
+all say so in the Log and do nothing. A song starting under your hands while
+you are playing is exactly what the mode is there to rule out. Loading a song
+still works, since seeing what you picked costs nothing.
+
+Choosing live play stops whatever was playing. It needs a soundfont, exactly
+as the preview does.
 
 ## Start here: the two test buttons
 
