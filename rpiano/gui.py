@@ -229,6 +229,10 @@ class MainWindow(QMainWindow):
         self._refresh_soundfont_state()
         self._configure_preview()
         self._refresh_backend_status()
+        # A backend chosen last time is not a backend being chosen now, and
+        # live play is the one that has to be opened either way.
+        self._open_live_play()
+        self._refresh_transport()
         self._sync_layout_view()
         self._apply_window_options()
 
@@ -3216,6 +3220,24 @@ class MainWindow(QMainWindow):
         # range still cannot end up typed into whatever has the cursor.
         return True
 
+    def _open_live_play(self) -> None:
+        """Open the synth the moment live play is the chosen backend.
+
+        Every other backend is opened by the player at the start of a song.
+        Live play is never going to see one - the keys are the song - so if
+        this is not done it sits there silently doing nothing, which is what
+        it did on startup when live play was simply the setting that had been
+        saved: the combo box was set before its signal was connected, so
+        nothing counted as choosing it.
+        """
+        backend = self._live_backend()
+        if backend is None:
+            return
+        try:
+            backend.open()
+        except BackendError as exc:
+            QMessageBox.warning(self, "Live play", str(exc))
+
     def _refresh_transport(self) -> None:
         """The transport is off while the piano is being played by hand."""
         live = self.config.backend == LivePlayBackend.name
@@ -3248,13 +3270,8 @@ class MainWindow(QMainWindow):
         self._refresh_backend_status()
         self._refresh_lock_note()
         if name == LivePlayBackend.name:
-            # Opened as soon as it is chosen rather than when a song starts,
-            # since no song is going to start: the keys are the song.
             self.player.stop()
-            try:
-                self.player.backend.open()
-            except BackendError as exc:
-                QMessageBox.warning(self, "Live play", str(exc))
+            self._open_live_play()
         else:
             # Leaving the mode: nothing is being held any more.
             self.keyboard.clear()

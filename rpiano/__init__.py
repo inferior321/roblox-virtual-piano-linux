@@ -339,4 +339,11 @@
 # - so it sat blank while the notes sounded, and the mode had no picture of
 # what was being held. It says so itself now, and clears when the mode is left
 # or the window loses the focus, both of which let every key go anyway.
-__version__ = "1.26.1"
+#
+# 1.26.2 makes live play work when it is the setting the program started with.
+# Every other backend is opened by the player at the start of a song, and live
+# play is never going to see one - so it is opened when it is chosen instead.
+# But starting up on it is not choosing it: the combo box is set before its
+# signal is connected, so nothing counted as a choice and the synth was never
+# opened. It played nothing until the setting was changed and changed back.
+__version__ = "1.26.2"
