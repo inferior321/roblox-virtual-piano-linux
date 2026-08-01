@@ -305,4 +305,13 @@
 # The player can be told to start without the count-in now, rather than having
 # its setting changed and put back around the call - which restart() was doing,
 # and which raced the thread it had just started.
-__version__ = "1.24.0"
+#
+# 1.25.0 adds live play: a fifth entry in Send keys via that hands the piano to
+# you. It is the audio preview with the source of the keystrokes swapped, and
+# is literally a subclass of it - same soundfont, same layout, same question
+# asked of it for every key - so a mapping heard here is the mapping rather
+# than an approximation. Letters, digits and space are swallowed while it is on
+# so nothing reaches the search box, and everything else is left alone so the
+# program stays usable and the mode can always be left. The transport goes grey
+# with it: a song and a pair of hands on the same piano is not what was meant.
+__version__ = "1.25.0"

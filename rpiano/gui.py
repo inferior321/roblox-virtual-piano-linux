@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import (
     QDir,
+    QEvent,
     QTimer,
     QFile,
     QItemSelectionModel,
@@ -65,6 +66,7 @@ from PyQt6.QtWidgets import (
 from . import __version__, theme
 from .backends import (
     BACKENDS,
+    LivePlayBackend,
     SOUNDFONT_MAGIC,
     BackendError,
     SoundfontBackend,
@@ -206,6 +208,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"Roblox Piano {__version__}")
         self._build_ui()
+        # Application-wide, because a key meant for the piano must not reach
+        # whatever else happens to have the cursor in it.
+        QApplication.instance().installEventFilter(self)
         self._install_hotkeys()
         self._reload_presets()
         self._refresh_soundfont_state()
@@ -1951,11 +1956,7 @@ class MainWindow(QMainWindow):
         self.details_view.setPlainText(song.details)
         self.seek.setValue(0)
         self.elapsed_label.setText("0:00")
-        for button in (
-            self.play_button, self.stop_button, self.restart_button,
-            self.back_button, self.forward_button,
-        ):
-            button.setEnabled(True)
+        self._refresh_transport()
         self._update_subtitle()
         self.log("info", f"Loaded {path.name}")
 
@@ -2718,6 +2719,84 @@ class MainWindow(QMainWindow):
                 f"it and {self._resume_hint()}.",
             )
 
+    # -- live play ---------------------------------------------------------
+    #
+    # The keys are read here rather than sent from here, which is the only way
+    # this differs from the audio preview. It is an application-wide event
+    # filter because the point is that a keystroke reaches the piano and
+    # nothing else: not the search box, not a spin box, not whatever happens to
+    # have the cursor in it.
+
+    # The piano only ever uses letters, digits and the space bar, so those are
+    # what it takes. Everything else - the function keys the transport is on,
+    # tab, escape, alt - is left alone, so the program stays usable and there
+    # is no way to be trapped in the mode.
+    LIVE_MODS = (
+        (Qt.KeyboardModifier.ShiftModifier, "shift"),
+        (Qt.KeyboardModifier.ControlModifier, "ctrl"),
+        (Qt.KeyboardModifier.AltModifier, "alt"),
+    )
+
+    def _live_backend(self):
+        """The live-play backend, if that is the one chosen."""
+        backend = self.player.backend
+        return backend if isinstance(backend, LivePlayBackend) else None
+
+    @staticmethod
+    def _live_char(event) -> str:
+        key = event.key()
+        if key == Qt.Key.Key_Space:
+            return " "
+        if (Qt.Key.Key_A <= key <= Qt.Key.Key_Z
+                or Qt.Key.Key_0 <= key <= Qt.Key.Key_9):
+            # Qt names a key by its unshifted character, which is exactly how a
+            # layout is written: shift+t is still the "t" key.
+            return chr(key).lower()
+        return ""
+
+    def eventFilter(self, watched, event):
+        kind = event.type()
+        if kind == QEvent.Type.WindowDeactivate:
+            # A key held as the window goes away never gets its release, and
+            # would sound on until something else happened to stop it.
+            backend = self._live_backend()
+            if backend is not None:
+                backend.release_all()
+            return super().eventFilter(watched, event)
+        if kind not in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+            return super().eventFilter(watched, event)
+        backend = self._live_backend()
+        if backend is None:
+            return super().eventFilter(watched, event)
+        char = self._live_char(event)
+        if not char:
+            return super().eventFilter(watched, event)
+        # A held key repeats, and a repeat is not a new note.
+        if not event.isAutoRepeat():
+            if kind == QEvent.Type.KeyPress:
+                held = event.modifiers()
+                backend.mods_up(tuple(name for _flag, name in self.LIVE_MODS))
+                backend.mods_down(
+                    tuple(name for flag, name in self.LIVE_MODS if held & flag)
+                )
+                backend.key_down(char)
+            else:
+                backend.key_up(char)
+        # Taken whether or not it made a sound, so a key outside the layout's
+        # range still cannot end up typed into whatever has the cursor.
+        return True
+
+    def _refresh_transport(self) -> None:
+        """The transport is off while the piano is being played by hand."""
+        live = self.config.backend == LivePlayBackend.name
+        ready = self.song is not None and not live
+        for button in (
+            self.play_button, self.stop_button, self.restart_button,
+            self.back_button, self.forward_button,
+        ):
+            button.setEnabled(ready)
+        self.seek.setEnabled(ready)
+
     def _backend_changed(self, name: str) -> None:
         try:
             backend = make_backend(name)
@@ -2738,6 +2817,15 @@ class MainWindow(QMainWindow):
         self.config.backend = name
         self._refresh_backend_status()
         self._refresh_lock_note()
+        if name == LivePlayBackend.name:
+            # Opened as soon as it is chosen rather than when a song starts,
+            # since no song is going to start: the keys are the song.
+            self.player.stop()
+            try:
+                self.player.backend.open()
+            except BackendError as exc:
+                QMessageBox.warning(self, "Live play", str(exc))
+        self._refresh_transport()
         self.log("info", f"Backend: {name}")
 
     def _refresh_backend_status(self) -> None:

@@ -226,6 +226,30 @@ that only its path, signature and size are checked at startup. Replace the file
 at the same path and it asks you to choose it again, since its instruments will
 have changed.
 
+## Playing it yourself
+
+**live play** is a fifth entry in **Send keys via**. Choosing it hands the
+piano to you: your keys sound through the same soundfont the audio preview
+uses, through the same layout, and light the same on-screen keyboard. Nothing
+is sent to Roblox.
+
+It is the audio preview with the source of the keystrokes swapped, and it is
+literally the same code — so a mapping you hear here is the mapping, not an
+approximation of it. `t` is C4, `shift+t` is C#4, and on the 88-key layout
+`ctrl+1` is A0.
+
+**Your keys go to the piano and nowhere else.** Letters, digits and the space
+bar are taken while the mode is on, so nothing can end up typed into the search
+box or a spin box. Everything else is left alone — F1 to F7 still work, tab
+still moves about, alt-tab still leaves — so the program stays usable and there
+is no way to be stuck in the mode. A held key that repeats does not restrike,
+and a note held as you switch away is let go rather than sounding on.
+
+The transport goes grey while it is selected. A song and a pair of hands
+playing the same piano at once is not what anybody meant, so choosing live play
+stops whatever was playing and leaves Play, Stop and the seek bar out of it.
+It needs a soundfont, exactly as the preview does.
+
 ## Start here: the two test buttons
 
 Both are in the **Input** tab.

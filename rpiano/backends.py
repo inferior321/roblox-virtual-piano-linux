@@ -561,10 +561,30 @@ class SoundfontBackend(Backend):
         self._pedal = False
 
 
+class LivePlayBackend(SoundfontBackend):
+    """The same synth, played by your fingers instead of by a file.
+
+    Everything about the sound is the soundfont backend's - the same file, the
+    same instrument, the same volume, and the same question asked of the layout
+    for every key. The only difference is where the keystrokes come from, which
+    is why this is a subclass and not a second implementation: a mapping heard
+    here is the mapping, not an approximation of it.
+
+    It is a backend so that it can sit in Send keys via, which is where you
+    choose what the keys do. Nothing is ever sent to it by the player, though -
+    the transport is switched off while it is chosen, because a song and a pair
+    of hands playing the same piano at once is not what anybody meant.
+    """
+
+    name = "live play"
+    description = "Play the piano yourself. Your keys sound here; nothing is sent."
+
+
 BACKENDS = {
     "uinput": UinputBackend,
     "dry run": NullBackend,
     "audio preview": SoundfontBackend,
+    "live play": LivePlayBackend,
 }
 
 
