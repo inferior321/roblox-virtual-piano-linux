@@ -63,7 +63,12 @@ class AppConfig:
     modifier_dwell_ms: int = 5
     min_note_ms: int = 8
     retrigger_gap_ms: int = 4
-    batch_window_ms: int = 8
+    batch_window_ms: int = 2
+
+    # Bumped when a timing default changes in a way a saved file should pick
+    # up. Every file stores every setting, so without this a new default would
+    # never reach anyone who had run the program before - see load().
+    timing_revision: int = 1
 
     # The Humanizer. Off by default, and off plays the file exactly as written.
     # The numbers are what it uses once switched on, so ticking the box does
@@ -140,6 +145,15 @@ class AppConfig:
         for key, value in data.items():
             if hasattr(config, key):
                 setattr(config, key, value)
+        if data.get("timing_revision", 0) < 1:
+            # The chord window came down from 8ms to 2ms, because at 8ms a fast
+            # run was taken for a chord and played out of order. A file still
+            # at 8 is almost certainly holding the old default rather than a
+            # choice, so it moves too; any other value was set by hand and is
+            # left alone.
+            if data.get("batch_window_ms") == 8:
+                config.batch_window_ms = 2
+            config.timing_revision = 1
         return config
 
     def save(self) -> None:

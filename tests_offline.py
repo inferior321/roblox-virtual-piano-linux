@@ -3,7 +3,9 @@
 Run with:  ./venv/bin/python tests_offline.py
 """
 
+import json
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from dataclasses import dataclass
@@ -1344,6 +1346,96 @@ check("and wraps when it is set to loop",
       [next_index(at, 3, True) for at in (0, 1, 2)] == [1, 2, 0])
 check("an empty queue goes nowhere",
       next_index(0, 0, True) is None)
+
+# ------------------------------------------------------- DENSE PASSAGES
+
+from rpiano.backends import NullBackend
+import rpiano.config as config_module
+
+FAST = dict(start_delay=0, modifier_dwell_ms=5, min_note_ms=8, retrigger_gap_ms=4)
+
+
+def down_order(backend):
+    return [what for _, kind, what in backend.events() if kind == "down"]
+
+
+# A sharp and then a natural 5ms later are two notes, not a chord. Inside the
+# old 8ms window they were one batch, and a batch strikes naturals first.
+layout = build_61()
+backend, _, _ = run(FakeSong([E(0.0, True, 61), E(0.1, False, 61),
+                              E(0.005, True, 62), E(0.1, False, 62)]),
+                    PlayerSettings(**FAST))
+check("two notes a few ms apart are struck in the order written",
+      down_order(backend) == [layout.notes[61].char, layout.notes[62].char],
+      str(down_order(backend)))
+
+# Faster than the dwell allows, so the engine falls behind. What was overdue
+# used to go out as one batch, which is a chord: the run came out as a cluster,
+# naturals first. It should come out late but still in order.
+sharps = [61, 63, 66, 68, 70]
+naturals = [48, 50, 52, 53, 55]
+run_notes = [note for pair in zip(sharps, naturals) for note in pair]
+chars = [layout.notes[note].char for note in run_notes]
+assert len(set(chars)) == len(chars), chars
+events = []
+for position, note in enumerate(run_notes):
+    events += [E(position * 0.004, True, note), E(position * 0.004 + 0.003, False, note)]
+backend, _, player = run(FakeSong(events),
+                         PlayerSettings(**dict(FAST, modifier_dwell_ms=20)))
+check("a run the engine cannot keep up with is still played in order",
+      down_order(backend) == chars, f"{down_order(backend)} want {chars}")
+check("and every note of it is struck", player.stats.struck == len(run_notes),
+      f"{player.stats.struck}/{len(run_notes)}")
+
+# The dwell head start is wall time and has to be converted to song time. At
+# 2x, a sharp 0.2s into the song is due 0.1s after the natural at the start;
+# taken as song time, the head start was half what the dwell needed and the
+# sharp landed late.
+for speed, song_gap in ((2.0, 0.2), (0.5, 0.05)):
+    backend, _, _ = run(FakeSong([E(0.0, True, 60), E(0.02, False, 60),
+                                  E(song_gap, True, 61), E(song_gap + 0.05, False, 61)]),
+                        PlayerSettings(**dict(FAST, modifier_dwell_ms=20, speed=speed)))
+    downs = [when for when, kind, _ in backend.events() if kind == "down"]
+    want = song_gap / speed * 1000
+    got = (downs[1] - downs[0]) * 1000 if len(downs) == 2 else None
+    check(f"a sharp lands on time at {speed}x speed",
+          got is not None and abs(got - want) <= 4,
+          f"{got:.1f}ms apart, want {want:.0f}" if got is not None else str(downs))
+
+# The stroke table and the track filter are worked out ahead, so they must
+# follow the settings they were worked out from when those change mid-song.
+player = Player(NullBackend(), layout, PlayerSettings())
+player.load(FakeSong([E(0.0, True, 60, track=0), E(0.1, True, 62, track=1)]))
+player._refresh_tables()
+check("the stroke table resolves as the layout does",
+      player._resolve(60) is layout.notes[60])
+player.settings.transpose = 1
+player._refresh_tables()
+check("and follows a change of transpose", player._resolve(60) is layout.notes[61])
+player.settings.enabled_tracks = {0}
+player._refresh_tables()
+check("the track filter is applied ahead", player._enabled == [True, False])
+player.settings.enabled_tracks.add(1)
+player._refresh_tables()
+check("and follows a filter changed in place", player._enabled == [True, True])
+
+# Every settings file stores the old 8ms chord window, so the new default only
+# reaches existing installs by moving that value - and only that value.
+saved_path = config_module.SETTINGS_PATH
+with tempfile.TemporaryDirectory() as folder:
+    config_module.SETTINGS_PATH = Path(folder) / "settings.json"
+    try:
+        def loaded(data):
+            config_module.SETTINGS_PATH.write_text(json.dumps(data))
+            return AppConfig.load()
+        check("an old file at the old default moves to the new window",
+              loaded({"batch_window_ms": 8}).batch_window_ms == 2)
+        check("an old file set by hand keeps its window",
+              loaded({"batch_window_ms": 12}).batch_window_ms == 12)
+        check("and a file already moved is not moved again",
+              loaded({"batch_window_ms": 8, "timing_revision": 1}).batch_window_ms == 8)
+    finally:
+        config_module.SETTINGS_PATH = saved_path
 
 print()
 print(f"{sum(results)}/{len(results)} passed")

@@ -68,7 +68,7 @@ class PlayerSettings:
     modifier_dwell_ms: int = 5
     min_note_ms: int = 8
     retrigger_gap_ms: int = 4
-    batch_window_ms: int = 8
+    batch_window_ms: int = 2
 
     # None means no filter at all; a set means exactly those, and an empty set
     # therefore means nothing. Conflating the two is what made "All off" play
@@ -84,6 +84,16 @@ class PlayerSettings:
 # A batch struck further behind its nominal time than this is worth counting.
 # Below it you are inside the frame the note belonged to anyway.
 LATE_THRESHOLD = 0.025
+
+# What the Humanizer treats as one chord, whatever the player's own window.
+# The two are different questions: the player's window decides which notes
+# share a modifier press, and is kept tight so that a fast run is not mistaken
+# for a chord and reordered. The Humanizer's decides which notes lean early or
+# late together, and a chord played by a person spreads wider than that.
+HUMANIZE_CHORD_MS = 8
+
+# Every pitch a MIDI file can name, which is what the stroke table covers.
+MIDI_PITCHES = range(128)
 
 
 @dataclass
@@ -162,6 +172,12 @@ class Player:
         self._sustain_down = False
         self._last_progress = 0.0
         self._count_in = True
+
+        # Worked out once rather than per note - see _refresh_tables.
+        self._strokes = {}          # pitch -> KeyStroke, or None if unplayable
+        self._strokes_for = None    # (layout, transpose, fold) it was built for
+        self._enabled = []          # event index -> passes the track filters
+        self._enabled_for = None    # (events, tracks, channels) likewise
 
     # -- state -------------------------------------------------------------
 
@@ -403,7 +419,6 @@ class Player:
     def _play_loop(self) -> None:
         self.stats.reset()
         self._count_remaining_offs()
-        events = self._events
         origin_wall = time.perf_counter()
         origin_song = self._position
         last_speed = max(0.05, self.settings.speed)
@@ -436,13 +451,23 @@ class Player:
             self._position = playhead
 
             with self._lock:
+                # Read afresh each pass: a replan swaps the list, and the index
+                # it leaves behind points into the new one.
+                events = self._events
+                self._refresh_tables()
                 self._flush_pending_releases(now)
                 batch = self._collect_batch(events, playhead)
                 if batch:
                     if playhead - batch[0].time > LATE_THRESHOLD:
                         self.stats.late += 1
                     self._dispatch_batch(batch)
-                self._apply_sustain(playhead)
+                if self._index < len(events) and events[self._index].time <= playhead:
+                    # Behind schedule, with notes still due that this batch did
+                    # not reach. The pedal waits for them rather than lifting
+                    # under notes that have not been struck yet.
+                    self._apply_sustain(events[self._index].time, inclusive=False)
+                else:
+                    self._apply_sustain(playhead)
 
             if now - self._last_progress >= 0.033:
                 self._last_progress = now
@@ -456,21 +481,29 @@ class Player:
                 break
 
             deadlines = []
-            if self._index < len(events):
-                head = events[self._index]
-                due = head.time - self._batch_lead(events)
-                deadlines.append(origin_wall + (due - origin_song) / speed)
-            if self._pending_release:
-                deadlines.append(min(item[0] for item in self._pending_release))
+            with self._lock:
+                # Under the lock, so a replan cannot swap the list between
+                # reading the index and reading the event it points at.
+                events = self._events
+                self._refresh_tables()
+                if self._index < len(events):
+                    head = events[self._index]
+                    due = head.time - self._batch_lead(events)
+                    deadlines.append(origin_wall + (due - origin_song) / speed)
+                if self._pending_release:
+                    deadlines.append(min(item[0] for item in self._pending_release))
             target = min(deadlines) if deadlines else time.perf_counter() + 0.02
 
+            # Slept, never spun. A spin holds the interpreter lock, and the
+            # GUI thread then only gets it when Python forces a handover every
+            # few milliseconds - on a dense passage, where the next note is
+            # always close, that is the whole passage. A timed wait gives the
+            # lock up and wakes within a fraction of a millisecond on Linux,
+            # which is well inside a game frame.
             gap = target - time.perf_counter()
-            if gap > 0.002:
-                self._wake.wait(min(gap - 0.001, 0.05))
+            if gap > 0:
+                self._wake.wait(min(gap, 0.05))
                 self._wake.clear()
-            else:
-                while time.perf_counter() < target and not self._should_stop:
-                    pass
 
     def _finish(self) -> None:
         with self._lock:
@@ -515,10 +548,14 @@ class Player:
         lookup; a cache keyed on transposition, dwell and layout measured
         slower than just doing the work (299ns against 399ns per call). The
         cheap gate in _collect_batch is what keeps this off the hot path.
+
+        The lead is returned in song time, because that is what it is taken
+        away from. The dwell is wall time, and a song played at twice the speed
+        covers twice as much of itself while the dwell runs.
         """
         if self._index >= len(events):
             return 0.0
-        dwell = self.settings.modifier_dwell_ms / 1000.0
+        dwell = self._dwell_in_song_time()
         if dwell <= 0:
             return 0.0
 
@@ -536,7 +573,7 @@ class Player:
             event = events[index]
             if event.time - head_time > dwell:
                 break
-            if event.on and self._event_enabled(event):
+            if event.on and self._enabled[index]:
                 first = event
                 break
         if first is None:
@@ -550,7 +587,7 @@ class Player:
             event = events[index]
             if event.time > limit:
                 break
-            if not event.on or not self._event_enabled(event):
+            if not event.on or not self._enabled[index]:
                 continue
             stroke = self._resolve(event.note)
             if stroke is not None:
@@ -566,8 +603,13 @@ class Player:
         # by sitting further along than the release in front of it.
         return max(0.0, dwell - offset)
 
+    def _dwell_in_song_time(self) -> float:
+        """The modifier dwell, as a stretch of the song rather than the clock."""
+        dwell = self.settings.modifier_dwell_ms / 1000.0
+        return dwell * max(0.05, self.settings.speed)
+
     def _collect_batch(self, events, playhead: float) -> list:
-        """Every event that's due, plus note-ons within the batch window of it.
+        """The next chord that's due, and the releases in front of it.
 
         Notes written as a chord rarely land on exactly the same tick, so a
         small window keeps them together and saves a modifier dwell.
@@ -575,6 +617,13 @@ class Player:
         The window still does NOT sweep in note-offs from beyond it. A note
         shorter than the window would otherwise have its release processed
         before its press and leave the key held down for good.
+
+        Nor does a batch run past the window, however much is due. When the
+        engine has fallen behind, everything overdue used to go out as one
+        batch - and a batch is played as a chord, naturals first, so a run
+        came out as a cluster in the wrong order. Taken one window at a time,
+        a late run is still a run, and the loop comes straight back for the
+        next batch because it is already due.
         """
         if self._index >= len(events):
             return []
@@ -582,7 +631,7 @@ class Player:
         # Conservative gate first. No event can need more lead than the dwell,
         # so this rules out the common "nothing due yet" case without touching
         # the layout at all.
-        max_lead = self.settings.modifier_dwell_ms / 1000.0
+        max_lead = self._dwell_in_song_time()
         if head.time - max_lead > playhead:
             return []
         lead = self._batch_lead(events)
@@ -606,21 +655,24 @@ class Player:
                 break
 
         batch = []
+        enabled = self._enabled
         while self._index < len(events):
             event = events[self._index]
+            if limit is not None and event.time > limit:
+                break
             if event.time - lead > playhead and not (
                 # Not due yet. Only a note-on may be pulled forward, and only
                 # if it falls inside the chord window.
-                event.on and limit is not None and event.time <= limit
+                event.on and limit is not None
             ):
                 break
-            self._index += 1
             if not event.on:
                 left = self._offs_remaining.get(event.note)
                 if left:
                     self._offs_remaining[event.note] = left - 1
-            if self._event_enabled(event):
+            if enabled[self._index]:
                 batch.append(event)
+            self._index += 1
         return batch
 
     def _count_remaining_offs(self) -> None:
@@ -646,6 +698,53 @@ class Player:
         if channels is not None and event.channel not in channels:
             return False
         return True
+
+    def _refresh_tables(self) -> None:
+        """Bring the stroke table and the track filter up to date.
+
+        The hot path asks two things of every event, often several times over
+        as it looks ahead: does it pass the track filters, and which key plays
+        it. Both answers only change when a setting does, so they are worked
+        out here and looked up after that.
+
+        They are rebuilt when a setting has moved rather than once per song,
+        because transpose, fold, layout and the track and channel boxes all
+        apply mid-song without a replan. Checking costs a few comparisons per
+        pass of the loop. Rebuilding the stroke table is 128 lookups, cheap
+        enough to do on every nudge of the transpose; the filter is one pass
+        over the events, and only when a box is ticked.
+        """
+        settings = self.settings
+        strokes_for = self._strokes_for
+        if (
+            strokes_for is None
+            or strokes_for[0] is not self.layout
+            or strokes_for[1] != settings.transpose
+            or strokes_for[2] != settings.fold_out_of_range
+        ):
+            self._strokes = {
+                note: self._resolve_uncached(note) for note in MIDI_PITCHES
+            }
+            self._strokes_for = (
+                self.layout, settings.transpose, settings.fold_out_of_range,
+            )
+
+        tracks, channels = settings.enabled_tracks, settings.enabled_channels
+        enabled_for = self._enabled_for
+        if (
+            enabled_for is None
+            or enabled_for[0] is not self._events
+            or enabled_for[1] != tracks
+            or enabled_for[2] != channels
+        ):
+            check = self._event_enabled
+            self._enabled = [check(event) for event in self._events]
+            # Copies, so a set changed in place still reads as a change.
+            self._enabled_for = (
+                self._events,
+                None if tracks is None else frozenset(tracks),
+                None if channels is None else frozenset(channels),
+            )
 
     def _dispatch_batch(self, batch: list) -> None:
         """Releases, then presses, then any release that belongs after a press.
@@ -831,11 +930,12 @@ class Player:
         # bridging grows with the speed the piece is being played at.
         horizon = struck_at + 2 * dwell * max(0.05, self.settings.speed)
         events = self._events
+        enabled = self._enabled
         for index in range(self._index, len(events)):
             event = events[index]
             if event.time > horizon:
                 return None
-            if not event.on or not self._event_enabled(event):
+            if not event.on or not enabled[index]:
                 continue
             stroke = self._resolve(event.note)
             return frozenset(stroke.mods) if stroke is not None else None
@@ -844,6 +944,14 @@ class Player:
     # -- individual keys ---------------------------------------------------
 
     def _resolve(self, note: int):
+        try:
+            return self._strokes[note]
+        except KeyError:
+            # Outside the MIDI range - only a Humanizer slip off the end of
+            # the keyboard gets here.
+            return self._resolve_uncached(note)
+
+    def _resolve_uncached(self, note: int):
         target = note + self.settings.transpose
         if target not in self.layout.notes:
             if not self.settings.fold_out_of_range:
@@ -983,25 +1091,31 @@ class Player:
 
         The playhead is recomputed from the wall clock every loop, so blocking
         here delays the next event slightly but never accumulates drift.
+
+        Slept rather than spun, for the reason given in _play_loop. Everything
+        blocked on here is a minimum - a dwell, a gap - so waking a fraction
+        of a millisecond late only ever errs on the safe side.
         """
-        end = time.perf_counter() + seconds
-        remaining = seconds - 0.001
-        if remaining > 0:
-            time.sleep(remaining)
-        while time.perf_counter() < end:
-            pass
+        if seconds > 0:
+            time.sleep(seconds)
 
     # -- sustain -----------------------------------------------------------
 
-    def _apply_sustain(self, playhead: float) -> None:
+    def _apply_sustain(self, reach: float, inclusive: bool = True) -> None:
+        """Apply the pedal up to `reach` - and at it too, if `inclusive`.
+
+        Not inclusive when `reach` is a note still waiting to be struck: a
+        pedal change at the same moment belongs after that note, as it does
+        when nothing is running late.
+        """
         key = self.settings.sustain_key
         if not key or not self.song.sustain:
             return
         events = self.song.sustain
         cutoff = self.settings.sustain_cutoff
-        while (
-            self._sustain_index < len(events)
-            and events[self._sustain_index].time <= playhead
+        while self._sustain_index < len(events) and (
+            events[self._sustain_index].time <= reach if inclusive
+            else events[self._sustain_index].time < reach
         ):
             value = events[self._sustain_index].value
             self._sustain_index += 1
@@ -1173,7 +1287,7 @@ def plan(song, layout: Layout, settings: PlayerSettings) -> tuple:
         events,
         layout,
         settings.humanize,
-        batch_window_ms=settings.batch_window_ms,
+        batch_window_ms=max(settings.batch_window_ms, HUMANIZE_CHORD_MS),
         retrigger_gap_ms=settings.retrigger_gap_ms,
         transpose=settings.transpose,
         enabled_tracks=settings.enabled_tracks,
